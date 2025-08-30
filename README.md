@@ -1,8 +1,6 @@
-<h1 align="center"><a href="https://flowoss.com">Flow - Open Source Software (OSS)</a></h1>
+# Flow Reader Extension
 
-<h2 align="center">Redefine ePub reader</h2>
-
-<p align="center">Free. Open source. Now available as a browser extension!</p>
+This is a fork of the original [Flow](https://github.com/pacexy/flow) ePub reader, with a focus on improving and stabilizing the browser extension.
 
 <p align="center"><img src="apps/website/public/screenshots/en-US.webp"/>
 </p>
@@ -18,25 +16,56 @@
 - Data export
 - Cloud storage
 
-## Browser Extension
+## Setup and Development
 
-Flow is now available as a browser extension for both Google Chrome and Mozilla Firefox.
+Follow these steps to set up the development environment and build the extension from the source code.
 
-### Installation (from source)
+### 1. Prerequisites
 
-To install the extension, you first need to build it from the source code.
+- [Node.js](https://nodejs.org) (v18 or higher)
+- [pnpm](https://pnpm.io/installation)
+- [Git](https://git-scm.com/downloads)
 
-1.  **Build for Chrome:**
+### 2. Clone the Repository
+
+```bash
+git clone https://github.com/Zolangui/Flow-Reader-Extension.git
+cd Flow-Reader-Extension
+```
+
+### 3. Install Dependencies
+
+```bash
+pnpm i
+```
+
+### 4. Set Up Environment Variables
+
+This project uses environment variables for configuration. Copy the example files and fill in the required values.
+
+```bash
+cp apps/reader/.env.local.example apps/reader/.env.local
+# You may need to do this for other apps if you intend to use them.
+```
+
+### 5. Build the Extension
+
+The extension needs to be built before it can be loaded into a browser.
+
+-   **For Chrome:**
     ```bash
     pnpm build:ext:chrome
     ```
-2.  **Build for Firefox:**
+-   **For Firefox:**
     ```bash
     pnpm build:ext:firefox
     ```
-    The built extension files will be located in the `apps/extension/dist` directory.
 
-#### Loading in Chrome
+The built extension files will be located in the `apps/extension/dist` directory.
+
+### 6. Load the Extension in Your Browser
+
+#### Chrome
 
 1.  Open Google Chrome and navigate to `chrome://extensions`.
 2.  Enable "Developer mode" using the toggle switch in the top-right corner.
@@ -44,7 +73,7 @@ To install the extension, you first need to build it from the source code.
 4.  In the file dialog, select the `apps/extension/dist` directory from this project.
 5.  The "Flow" extension will now be installed.
 
-#### Loading in Firefox
+#### Firefox
 
 1.  Open Mozilla Firefox and navigate to `about:debugging`.
 2.  Click on the "This Firefox" tab on the left.
@@ -52,66 +81,25 @@ To install the extension, you first need to build it from the source code.
 4.  In the file dialog, navigate to the `apps/extension/dist` directory and select the `manifest.json` file.
 5.  The "Flow" extension will now be temporarily installed.
 
-## Development
+### Packaging for Distribution
 
-### Prerequisites
-
-- [Node.js](https://nodejs.org)
-- [pnpm](https://pnpm.io/installation)
-- [Git](https://git-scm.com/downloads)
-
-### Clone the repo
-
-```bash
-git clone https://github.com/pacexy/flow
-```
-
-### Install the dependencies
-
-```bash
-pnpm i
-```
-
-### Setup the environment variables
-
-Copy and rename all `.env.local.example`s to `.env.local` and setup the environment variables.
-
-### Run the original Web App
-
-```bash
-pnpm dev
-```
-
-### Build the Extension
-
--   **For Chrome:**
-    ```bash
-    pnpm build:ext:chrome
-    ```
--   **For Firefox:**
-    ```bash
-    pnpm build:ext:firefox
-    ```
-
-### Package the Extension for Distribution
+If you want to create a distributable zip file of the extension:
 
 -   **For Chrome:**
     ```bash
     pnpm package:chrome
     ```
-    This will create a `flow-chrome.zip` file in the root directory.
 -   **For Firefox:**
     ```bash
     pnpm package:firefox
     ```
-    This will create a `flow-firefox.zip` file in the root directory.
 
 ## Contributing
 
-There are many ways in which you can participate in this project, for example:
+All contributions are welcome!
 
-- [Submit bugs and feature requests](https://github.com/pacexy/flow/issues/new), and help us verify as they are checked in
-- [Submit pull requests](https://github.com/pacexy/flow/pulls)
+- [Submit bugs and feature requests](https://github.com/Zolangui/Flow-Reader-Extension/issues/new)
+- [Submit pull requests](https://github.com/Zolangui/Flow-Reader-Extension/pulls)
 
 ## Credits
 
