@@ -222,11 +222,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
     const observer = new ResizeObserver(([e]) => {
       const size = e?.contentRect.width ?? 0
       // `display: hidden` will lead `rect` to 0
-      if (
-        size !== 0 &&
-        prevSize.current !== 0 &&
-        Math.abs(size - prevSize.current) > 2
-      ) {
+      if (size !== 0 && prevSize.current !== 0) {
         reader.resize()
       }
       prevSize.current = size
@@ -404,11 +400,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
         ref={ref}
         className={clsx('relative flex-1', isTouchScreen || 'h-0')}
         // `color-scheme: dark` will make iframe background white
-        style={{
-          colorScheme: 'auto',
-          maxWidth: typography.textWidth ? `${typography.textWidth}rem` : undefined,
-          margin: typography.textWidth ? '0 auto' : undefined,
-        }}
+        style={{ colorScheme: 'auto' }}
       >
         <div
           className={clsx(

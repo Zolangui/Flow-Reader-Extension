@@ -20,6 +20,7 @@ import {
   useColorScheme,
   useMobile,
   useSetAction,
+  useSettings,
   useTranslation,
   useZenModeHandler,
 } from '../hooks'
@@ -328,9 +329,15 @@ const SideBar: React.FC = () => {
 }
 
 interface ReaderProps extends ComponentProps<'div'> {}
-const Reader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => {
+const Reader: React.FC<ReaderProps> = ({
+  className,
+  children,
+  ...props
+}: ReaderProps) => {
   useSplitViewItem(Reader)
   const [bg] = useBackground()
+  const [settings] = useSettings()
+  const { textWidth } = settings
 
   const r = useReaderSnapshot()
   const readMode = r.focusedTab?.isBook
@@ -343,6 +350,16 @@ const Reader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => 
         bg,
       )}
       {...props}
-    />
+    >
+      <div
+        className="h-full"
+        style={{
+          maxWidth: textWidth ? `${textWidth}rem` : undefined,
+          margin: textWidth ? '0 auto' : undefined,
+        }}
+      >
+        {children}
+      </div>
+    </div>
   )
 }
