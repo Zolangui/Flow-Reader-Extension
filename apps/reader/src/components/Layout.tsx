@@ -20,13 +20,12 @@ import {
   useColorScheme,
   useMobile,
   useSetAction,
-  useSettings,
   useTranslation,
   useZenModeHandler,
 } from '../hooks'
 import type { Action } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
-import { navbarState, useZenMode } from '../state'
+import { navbarState, useSettings, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
 import { SplitView, useSplitViewItem } from './base'
