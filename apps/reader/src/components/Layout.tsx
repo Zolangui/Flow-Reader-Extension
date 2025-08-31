@@ -351,11 +351,10 @@ const Reader: React.FC<ReaderProps> = ({
       {...props}
     >
       <div
-        className="h-full"
-        style={{
-          maxWidth: textWidth ? `${textWidth}rem` : undefined,
-          margin: textWidth ? '0 auto' : undefined,
-        }}
+        className={clsx(
+          'h-full',
+          textWidth && `mx-auto [max-width:${textWidth}rem]`,
+        )}
       >
         {children}
       </div>
