@@ -494,7 +494,7 @@ const Bar: React.FC<LineProps> = ({ className, ...props }) => {
   return (
     <div
       className={clsx(
-        'typescale-body-small text-outline flex h-6 items-center justify-between gap-2 px-[4vw] sm:px-2 zen-hover-reveal',
+        'typescale-body-small text-outline flex h-6 items-center justify-between gap-2 px-[4vw] sm:px-2',
         className,
       )}
       {...props}
