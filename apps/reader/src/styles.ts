@@ -42,7 +42,8 @@ export function updateCustomStyle(
 ) {
   if (!contents || !settings) return
 
-  const { zoom, ...other } = settings
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { zoom, textWidth, spread, theme, ...other } = settings
   let css = `a, article, cite, div, li, p, pre, span, table, body {
     ${mapToCss(other)}
   }`
