@@ -37,6 +37,7 @@ export default {
   'typography.font_size': '字号',
   'typography.font_weight': '字重',
   'typography.line_height': '行高',
+  'typography.text_width': 'Text Width',
   'typography.zoom': '缩放',
 
   'theme.title': '颜色主题',

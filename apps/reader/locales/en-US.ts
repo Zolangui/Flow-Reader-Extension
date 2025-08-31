@@ -37,6 +37,7 @@ export default {
   'typography.font_size': 'Font Size',
   'typography.font_weight': 'Font Weight',
   'typography.line_height': 'Line Height',
+  'typography.text_width': 'Text Width',
   'typography.zoom': 'Zoom',
 
   'theme.title': 'Theme',

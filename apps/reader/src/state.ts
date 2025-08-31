@@ -48,6 +48,7 @@ export interface TypographyConfiguration {
   lineHeight?: number
   spread?: RenditionSpread
   zoom?: number
+  textWidth?: number
 }
 
 interface ThemeConfiguration {

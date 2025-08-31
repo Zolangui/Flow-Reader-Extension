@@ -42,10 +42,17 @@ export function updateCustomStyle(
 ) {
   if (!contents || !settings) return
 
-  const { zoom, ...other } = settings
+  const { zoom, textWidth, ...other } = settings
   let css = `a, article, cite, div, li, p, pre, span, table, body {
     ${mapToCss(other)}
   }`
+
+  if (textWidth) {
+    css += `body {
+      max-width: ${textWidth}rem !important;
+      margin: 0 auto !important;
+    }`
+  }
 
   if (zoom) {
     const body = contents.content as HTMLBodyElement
