@@ -37,7 +37,7 @@ export const TypographyView: React.FC<PaneViewProps> = (props) => {
     lineHeight,
     zoom,
     spread,
-    textWidth,
+    contentWidthPercent,
   } =
     scope === TypographyScope.Book
       ? focusedBookTab?.book.configuration?.typography ?? defaultSettings
@@ -171,12 +171,13 @@ export const TypographyView: React.FC<PaneViewProps> = (props) => {
           }}
         />
         <NumberField
-          name={t('text_width')}
-          min={30}
-          step={1}
-          defaultValue={textWidth}
+          name={t('content_width')}
+          min={50}
+          max={100}
+          step={5}
+          defaultValue={contentWidthPercent || 90}
           onChange={(v) => {
-            setTypography('textWidth', v || undefined)
+            setTypography('contentWidthPercent', v || undefined)
           }}
         />
         <NumberField

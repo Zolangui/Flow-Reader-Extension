@@ -37,7 +37,7 @@ export default {
   'typography.font_size': 'フォントサイズ',
   'typography.font_weight': 'フォントウェイト',
   'typography.line_height': '行の高さ',
-  'typography.text_width': 'Text Width',
+  'typography.content_width': 'Content Width (%)',
   'typography.zoom': 'ズーム',
 
   'theme.title': 'テーマ',

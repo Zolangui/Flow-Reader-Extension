@@ -181,11 +181,7 @@ function ReaderGroup({ index }: ReaderGroupProps) {
         {group.tabs.map((tab, i) => (
           <PaneContainer active={i === selectedIndex} key={tab.id}>
             {tab instanceof BookTab ? (
-              <BookPane
-                tab={tab}
-                onMouseDown={handleMouseDown}
-                containerSize={size}
-              />
+              <BookPane tab={tab} onMouseDown={handleMouseDown} />
             ) : (
               <tab.Component />
             )}
@@ -206,32 +202,34 @@ const PaneContainer: React.FC<PaneContainerProps> = ({ active, children }) => {
 interface BookPaneProps {
   tab: BookTab
   onMouseDown: () => void
-  containerSize: number | undefined
 }
 
-function BookPane({ tab, onMouseDown, containerSize }: BookPaneProps) {
+function BookPane({ tab, onMouseDown }: BookPaneProps) {
   const ref = useRef<HTMLDivElement>(null)
   const prevSize = useRef(0)
   const typography = useTypography(tab)
   const { dark } = useColorScheme()
   const [background] = useBackground()
   const [settings] = useSettings()
-  const { textWidth } = settings
+  const { contentWidthPercent } = settings
 
   const { iframe, rendition, rendered, container } = useSnapshot(tab)
 
   useEffect(() => {
-    if (!rendition || !rendition.manager) return
+    if (!rendition) return
 
-    if (textWidth && containerSize) {
-      const textWidthPx = textWidth * 16
-      const gap = containerSize - textWidthPx
-      rendition.manager.settings.gap = gap > 0 ? gap : 0
-    } else {
-      rendition.manager.settings.gap = undefined
-    }
-    rendition.resize()
-  }, [rendition, textWidth, containerSize])
+    const horizontalPadding = contentWidthPercent
+      ? `${(100 - contentWidthPercent) / 2}%`
+      : '0%'
+
+    rendition.themes.register('custom-width', {
+      body: {
+        padding: `2rem ${horizontalPadding} !important`,
+        'box-sizing': 'border-box !important',
+      },
+    })
+    rendition.themes.select('custom-width')
+  }, [rendition, contentWidthPercent])
 
   useTilg()
 
