@@ -218,14 +218,17 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
   useTilg()
 
   useEffect(() => {
-    const el = ref.current
+    const el = wrapperRef.current
     if (!el) return
 
     const observer = new ResizeObserver(([e]) => {
       const size = e?.contentRect.width ?? 0
       // `display: hidden` will lead `rect` to 0
       if (size !== 0 && prevSize.current !== 0) {
-        reader.resize()
+        // We only care about the main split view resize, not our own.
+        if (rendition) {
+          rendition.resize(el.clientWidth, el.clientHeight)
+        }
       }
       prevSize.current = size
     })
@@ -235,7 +238,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
     return () => {
       observer.disconnect()
     }
-  }, [])
+  }, [rendition])
 
   useSync(tab)
 
@@ -258,7 +261,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
       const height = el.clientHeight
       tab.render(el, width, height)
     }
-  }, [rendition, tab])
+  }, [rendition, tab, contentWidthPercent]) // Rerender when width changes
 
   useEffect(() => {
     /**
@@ -405,7 +408,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
       <ReaderPaneHeader tab={tab} />
       <div
         ref={wrapperRef}
-        className={clsx('relative flex-1', isTouchScreen || 'h-0')}
+        className={clsx('relative flex-1 w-full h-full')}
         style={{
           width:
             contentWidthPercent && contentWidthPercent < 100
