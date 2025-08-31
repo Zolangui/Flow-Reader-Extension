@@ -30,7 +30,7 @@ export const navbarState = atom<boolean>({
 export const zenModeState = atom<boolean>({
   key: 'zen',
   default: false,
-  effects: [localStorageEffect('zen', false)],
+  effects: [localStorageEffect<boolean>('zen', false)],
 })
 
 export function useZenMode() {

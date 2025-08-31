@@ -22,8 +22,8 @@ import {
   useMobile,
   useSetAction,
   useTranslation,
+  useZenModeHandler,
 } from '../hooks'
-import { useZenModeHandler } from '../hooks/useZenModeHandler'
 import type { Action } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
 import {
@@ -200,7 +200,7 @@ function ViewActionBar({ className, env }: EnvActionBarProps) {
           )
         })}
       <Action
-        title={t('zen.title', 'Zen Mode')}
+        title={t('zen.title')}
         Icon={RiFocus3Line}
         active={isZenMode}
         onClick={() => setZenMode(!isZenMode)}
