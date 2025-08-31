@@ -400,7 +400,11 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
         ref={ref}
         className={clsx('relative flex-1', isTouchScreen || 'h-0')}
         // `color-scheme: dark` will make iframe background white
-        style={{ colorScheme: 'auto' }}
+        style={{
+          colorScheme: 'auto',
+          maxWidth: typography.textWidth ? `${typography.textWidth}rem` : undefined,
+          margin: typography.textWidth ? '0 auto' : undefined,
+        }}
       >
         <div
           className={clsx(
