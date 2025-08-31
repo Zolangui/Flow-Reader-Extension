@@ -25,7 +25,7 @@ import {
 } from '../hooks'
 import type { Action } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
-import { navbarState, useSettings, useZenMode } from '../state'
+import { navbarState, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
 import { SplitView, useSplitViewItem } from './base'
@@ -328,15 +328,9 @@ const SideBar: React.FC = () => {
 }
 
 interface ReaderProps extends ComponentProps<'div'> {}
-const Reader: React.FC<ReaderProps> = ({
-  className,
-  children,
-  ...props
-}: ReaderProps) => {
+const Reader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => {
   useSplitViewItem(Reader)
   const [bg] = useBackground()
-  const [settings] = useSettings()
-  const { textWidth } = settings
 
   const r = useReaderSnapshot()
   const readMode = r.focusedTab?.isBook
@@ -349,15 +343,6 @@ const Reader: React.FC<ReaderProps> = ({
         bg,
       )}
       {...props}
-    >
-      <div
-        className={clsx(
-          'h-full',
-          textWidth && `mx-auto [max-width:${textWidth}rem]`,
-        )}
-      >
-        {children}
-      </div>
-    </div>
+    />
   )
 }

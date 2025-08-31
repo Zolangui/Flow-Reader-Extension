@@ -15,7 +15,7 @@ import useTilg from 'tilg'
 import { useSnapshot } from 'valtio'
 
 import { RenditionSpread } from '@flow/epubjs/types/rendition'
-import { navbarState } from '@flow/reader/state'
+import { navbarState, useSettings } from '@flow/reader/state'
 
 import { db } from '../db'
 import { handleFiles } from '../file'
@@ -87,6 +87,8 @@ function ReaderGroup({ index }: ReaderGroupProps) {
   const { focusedIndex } = useReaderSnapshot()
   const { tabs, selectedIndex } = useSnapshot(group)
   const t = useTranslation()
+  const [settings] = useSettings()
+  const { textWidth } = settings
 
   const { size } = useSplitViewItem(`${ReaderGroup.name}.${index}`, {
     // to disable sash resize
@@ -101,7 +103,11 @@ function ReaderGroup({ index }: ReaderGroupProps) {
     <div
       className="ReaderGroup flex flex-1 flex-col overflow-hidden focus:outline-none"
       onMouseDown={handleMouseDown}
-      style={{ width: size }}
+      style={{
+        width: size,
+        maxWidth: textWidth ? `${textWidth}rem` : undefined,
+        margin: textWidth ? '0 auto' : undefined,
+      }}
     >
       <Tab.List
         className="hidden sm:flex"
