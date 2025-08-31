@@ -15,7 +15,7 @@ import useTilg from 'tilg'
 import { useSnapshot } from 'valtio'
 
 import { RenditionSpread } from '@flow/epubjs/types/rendition'
-import { navbarState, useSettings } from '@flow/reader/state'
+import { navbarState } from '@flow/reader/state'
 
 import { db } from '../db'
 import { handleFiles } from '../file'
@@ -206,30 +206,14 @@ interface BookPaneProps {
 
 function BookPane({ tab, onMouseDown }: BookPaneProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const prevSize = useRef(0)
   const typography = useTypography(tab)
   const { dark } = useColorScheme()
   const [background] = useBackground()
-  const [settings] = useSettings()
-  const { contentWidthPercent } = settings
+  const { contentWidthPercent } = typography
 
   const { iframe, rendition, rendered, container } = useSnapshot(tab)
-
-  useEffect(() => {
-    if (!rendition) return
-
-    const horizontalPadding = contentWidthPercent
-      ? `${(100 - contentWidthPercent) / 2}%`
-      : '0%'
-
-    rendition.themes.register('custom-width', {
-      body: {
-        padding: `2rem ${horizontalPadding} !important`,
-        'box-sizing': 'border-box !important',
-      },
-    })
-    rendition.themes.select('custom-width')
-  }, [rendition, contentWidthPercent])
 
   useTilg()
 
@@ -268,8 +252,13 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
   }, [applyCustomStyle, tab])
 
   useEffect(() => {
-    if (ref.current) tab.render(ref.current)
-  }, [tab])
+    const el = ref.current
+    if (el && !rendition) {
+      const width = el.clientWidth
+      const height = el.clientHeight
+      tab.render(el, width, height)
+    }
+  }, [rendition, tab])
 
   useEffect(() => {
     /**
@@ -415,22 +404,34 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
       />
       <ReaderPaneHeader tab={tab} />
       <div
-        ref={ref}
+        ref={wrapperRef}
         className={clsx('relative flex-1', isTouchScreen || 'h-0')}
-        // `color-scheme: dark` will make iframe background white
-        style={{ colorScheme: 'auto' }}
+        style={{
+          width:
+            contentWidthPercent && contentWidthPercent < 100
+              ? `${contentWidthPercent}%`
+              : '100%',
+          margin: '0 auto',
+        }}
       >
         <div
-          className={clsx(
-            'absolute inset-0',
-            // do not cover `sash`
-            'z-20',
-            rendered && 'hidden',
-            background,
-          )}
-        />
-        <TextSelectionMenu tab={tab} />
-        <Annotations tab={tab} />
+          ref={ref}
+          className="h-full w-full"
+          // `color-scheme: dark` will make iframe background white
+          style={{ colorScheme: 'auto' }}
+        >
+          <div
+            className={clsx(
+              'absolute inset-0',
+              // do not cover `sash`
+              'z-20',
+              rendered && 'hidden',
+              background,
+            )}
+          />
+          <TextSelectionMenu tab={tab} />
+          <Annotations tab={tab} />
+        </div>
       </div>
       <ReaderPaneFooter tab={tab} />
     </div>

@@ -352,7 +352,7 @@ export class BookTab extends BaseTab {
 
   private _el?: HTMLDivElement
   onRender?: () => void
-  async render(el: HTMLDivElement) {
+  async render(el: HTMLDivElement, width?: number, height?: number) {
     if (el === this._el) return
     this._el = ref(el)
 
@@ -385,8 +385,8 @@ export class BookTab extends BaseTab {
     })
     this.rendition = ref(
       this.epub.renderTo(el, {
-        width: '100%',
-        height: '100%',
+        width: width || '100%',
+        height: height || '100%',
         allowScriptedContent: true,
       }),
     )
