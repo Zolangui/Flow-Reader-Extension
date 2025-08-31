@@ -1,7 +1,6 @@
 import { Overlay } from '@literal-ui/core'
 import clsx from 'clsx'
-import { ComponentProps, useEffect, useState } from 'react'
-import { useMemo } from 'react'
+import { ComponentProps, useEffect, useMemo, useState } from 'react'
 import { IconType } from 'react-icons'
 import {
   MdFormatUnderlined,
@@ -26,12 +25,7 @@ import {
 } from '../hooks'
 import type { Action } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
-import {
-  navbarState,
-  useBottomBarVisible,
-  useTopBarVisible,
-  useZenMode,
-} from '../state'
+import { navbarState, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
 import { SplitView, useSplitViewItem } from './base'
@@ -48,9 +42,6 @@ export const Layout: React.FC = ({ children }) => {
   useColorScheme()
   useZenModeHandler()
   const [isZenMode] = useZenMode()
-  const [, setTopBarVisible] = useTopBarVisible()
-  const [, setBottomBarVisible] = useBottomBarVisible()
-
   const [ready, setReady] = useState(false)
   const setAction = useSetAction()
   const mobile = useMobile()
@@ -61,38 +52,18 @@ export const Layout: React.FC = ({ children }) => {
     setReady(true)
   }, [mobile, setAction])
 
-  useEffect(() => {
-    if (isZenMode) {
-      setTopBarVisible(false)
-      setBottomBarVisible(false)
-    } else {
-      setTopBarVisible(true)
-      setBottomBarVisible(true)
-    }
-  }, [isZenMode, setTopBarVisible, setBottomBarVisible])
-
   return (
-    <div id="layout" className="select-none relative">
-      {isZenMode && (
-        <>
-          <div
-            className="absolute top-0 h-8 w-full z-30"
-            onMouseEnter={() => setTopBarVisible(true)}
-            onMouseLeave={() => setTopBarVisible(false)}
-          />
-          <div
-            className="absolute bottom-0 h-8 w-full z-30"
-            onMouseEnter={() => setBottomBarVisible(true)}
-            onMouseLeave={() => setBottomBarVisible(false)}
-          />
-        </>
+    <div id="layout" className="select-none" data-zen-mode={isZenMode}>
+      {isZenMode ? (
+        ready && <Reader>{children}</Reader>
+      ) : (
+        <SplitView>
+          {mobile === false && <ActivityBar />}
+          {mobile === true && <NavigationBar />}
+          {ready && <SideBar />}
+          {ready && <Reader>{children}</Reader>}
+        </SplitView>
       )}
-      <SplitView>
-        {mobile === false && !isZenMode && <ActivityBar />}
-        {mobile === true && !isZenMode && <NavigationBar />}
-        {ready && <SideBar />}
-        {ready && <Reader>{children}</Reader>}
-      </SplitView>
     </div>
   )
 }
@@ -329,12 +300,11 @@ const SideBar: React.FC = () => {
   const [action, setAction] = useAction()
   const mobile = useMobile()
   const t = useTranslation()
-  const [isZenMode] = useZenMode()
 
   const { size } = useSplitViewItem(SideBar, {
     preferredSize: 240,
     minSize: 160,
-    visible: !!action && !isZenMode,
+    visible: !!action,
   })
 
   return (

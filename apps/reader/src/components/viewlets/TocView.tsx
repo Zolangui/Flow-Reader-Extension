@@ -136,10 +136,6 @@ const TocRow = memo<TocRowProps>(({
 }) => {
   const { label, subitems, depth, expanded, id, href } = item
 
-  // The official location from the model is the source of truth,
-  // but we also check the last clicked href. This immediately highlights
-  // the clicked item even if the model's update is delayed or doesn't
-  // account for href fragments.
   const isActive = useMemo(() => {
     if (lastClickedHref) {
       return href === lastClickedHref

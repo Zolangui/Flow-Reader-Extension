@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Zen Mode CSS-based hover effects */
+[data-zen-mode="true"] .zen-hover-reveal {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+[data-zen-mode="true"]:hover .zen-hover-reveal {
+  opacity: 1;
+}
+
 html,
 body,
 #__next,

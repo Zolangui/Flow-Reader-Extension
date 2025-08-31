@@ -37,24 +37,6 @@ export function useZenMode() {
   return useRecoilState(zenModeState)
 }
 
-export const topBarVisibleState = atom<boolean>({
-  key: 'topBarVisible',
-  default: true,
-})
-
-export function useTopBarVisible() {
-  return useRecoilState(topBarVisibleState)
-}
-
-export const bottomBarVisibleState = atom<boolean>({
-  key: 'bottomBarVisible',
-  default: true,
-})
-
-export function useBottomBarVisible() {
-  return useRecoilState(bottomBarVisibleState)
-}
-
 export interface Settings extends TypographyConfiguration {
   theme?: ThemeConfiguration
 }
