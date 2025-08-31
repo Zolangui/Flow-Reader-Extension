@@ -222,7 +222,11 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
     const observer = new ResizeObserver(([e]) => {
       const size = e?.contentRect.width ?? 0
       // `display: hidden` will lead `rect` to 0
-      if (size !== 0 && prevSize.current !== 0) {
+      if (
+        size !== 0 &&
+        prevSize.current !== 0 &&
+        Math.abs(size - prevSize.current) > 2
+      ) {
         reader.resize()
       }
       prevSize.current = size
