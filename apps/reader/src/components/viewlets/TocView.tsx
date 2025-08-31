@@ -1,5 +1,5 @@
 import { StateLayer } from '@literal-ui/core'
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { VscCollapseAll, VscExpandAll } from 'react-icons/vsc'
 
 import {
@@ -127,7 +127,7 @@ interface TocRowProps {
   setLastClickedHref: (href: string) => void
   onActivate: () => void
 }
-const TocRow: React.FC<TocRowProps> = ({
+const TocRow = memo<TocRowProps>(({
   currentNavItem,
   item,
   lastClickedHref,
@@ -163,4 +163,5 @@ const TocRow: React.FC<TocRowProps> = ({
       onActivate={onActivate}
     />
   )
-}
+})
+TocRow.displayName = 'TocRow'
