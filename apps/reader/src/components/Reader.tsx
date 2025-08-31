@@ -87,8 +87,6 @@ function ReaderGroup({ index }: ReaderGroupProps) {
   const { focusedIndex } = useReaderSnapshot()
   const { tabs, selectedIndex } = useSnapshot(group)
   const t = useTranslation()
-  const [settings] = useSettings()
-  const { textWidth } = settings
 
   const { size } = useSplitViewItem(`${ReaderGroup.name}.${index}`, {
     // to disable sash resize
@@ -103,11 +101,7 @@ function ReaderGroup({ index }: ReaderGroupProps) {
     <div
       className="ReaderGroup flex flex-1 flex-col overflow-hidden focus:outline-none"
       onMouseDown={handleMouseDown}
-      style={{
-        width: size,
-        maxWidth: textWidth ? `${textWidth}rem` : undefined,
-        margin: textWidth ? '0 auto' : undefined,
-      }}
+      style={{ width: size }}
     >
       <Tab.List
         className="hidden sm:flex"
@@ -187,7 +181,11 @@ function ReaderGroup({ index }: ReaderGroupProps) {
         {group.tabs.map((tab, i) => (
           <PaneContainer active={i === selectedIndex} key={tab.id}>
             {tab instanceof BookTab ? (
-              <BookPane tab={tab} onMouseDown={handleMouseDown} />
+              <BookPane
+                tab={tab}
+                onMouseDown={handleMouseDown}
+                containerSize={size}
+              />
             ) : (
               <tab.Component />
             )}
@@ -208,16 +206,32 @@ const PaneContainer: React.FC<PaneContainerProps> = ({ active, children }) => {
 interface BookPaneProps {
   tab: BookTab
   onMouseDown: () => void
+  containerSize: number | undefined
 }
 
-function BookPane({ tab, onMouseDown }: BookPaneProps) {
+function BookPane({ tab, onMouseDown, containerSize }: BookPaneProps) {
   const ref = useRef<HTMLDivElement>(null)
   const prevSize = useRef(0)
   const typography = useTypography(tab)
   const { dark } = useColorScheme()
   const [background] = useBackground()
+  const [settings] = useSettings()
+  const { textWidth } = settings
 
   const { iframe, rendition, rendered, container } = useSnapshot(tab)
+
+  useEffect(() => {
+    if (!rendition || !rendition.manager) return
+
+    if (textWidth && containerSize) {
+      const textWidthPx = textWidth * 16
+      const gap = containerSize - textWidthPx
+      rendition.manager.settings.gap = gap > 0 ? gap : 0
+    } else {
+      rendition.manager.settings.gap = undefined
+    }
+    rendition.resize()
+  }, [rendition, textWidth, containerSize])
 
   useTilg()
 
