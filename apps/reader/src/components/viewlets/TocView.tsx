@@ -132,7 +132,7 @@ const TocRow: React.FC<TocRowProps> = ({
     <Row
       title={label.trim()}
       depth={depth}
-      active={href === currentNavItem?.href}
+      active={id === currentNavItem?.id}
       expanded={expanded}
       subitems={subitems}
       onClick={() => {

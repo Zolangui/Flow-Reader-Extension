@@ -40,7 +40,6 @@ export default {
   'typography.zoom': 'Zoom',
 
   'theme.title': 'Theme',
-  'zen.title': 'Zen Mode',
   'theme.source_color': 'Source Color',
   'theme.background_color': 'Background Color',
 

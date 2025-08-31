@@ -15,12 +15,7 @@ import useTilg from 'tilg'
 import { useSnapshot } from 'valtio'
 
 import { RenditionSpread } from '@flow/epubjs/types/rendition'
-import {
-  navbarState,
-  useBottomBarVisible,
-  useTopBarVisible,
-  useZenMode,
-} from '@flow/reader/state'
+import { navbarState } from '@flow/reader/state'
 
 import { db } from '../db'
 import { handleFiles } from '../file'
@@ -430,16 +425,10 @@ interface ReaderPaneHeaderProps {
 const ReaderPaneHeader: React.FC<ReaderPaneHeaderProps> = ({ tab }) => {
   const { location } = useSnapshot(tab)
   const navPath = tab.getNavPath()
-  const [isZenMode] = useZenMode()
-  const [isTopBarVisible] = useTopBarVisible()
 
   useEffect(() => {
     navPath.forEach((i) => (i.expanded = true))
   }, [navPath])
-
-  if (isZenMode && !isTopBarVisible) {
-    return null
-  }
 
   return (
     <Bar>
@@ -468,12 +457,6 @@ interface FooterProps {
 }
 const ReaderPaneFooter: React.FC<FooterProps> = ({ tab }) => {
   const { locationToReturn, location, book } = useSnapshot(tab)
-  const [isZenMode] = useZenMode()
-  const [isBottomBarVisible] = useBottomBarVisible()
-
-  if (isZenMode && !isBottomBarVisible) {
-    return null
-  }
 
   return (
     <Bar>
