@@ -11,7 +11,7 @@ import {
   MdTimeline,
   MdOutlineLightMode,
 } from 'react-icons/md'
-import { RiFontSize, RiHome6Line, RiSettings5Line } from 'react-icons/ri'
+import { RiFocus3Line, RiFontSize, RiHome6Line, RiSettings5Line } from 'react-icons/ri'
 import { useRecoilState } from 'recoil'
 
 import {
@@ -22,10 +22,16 @@ import {
   useMobile,
   useSetAction,
   useTranslation,
+  useZenModeHandler,
 } from '../hooks'
 import type { Action } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
-import { navbarState } from '../state'
+import {
+  navbarState,
+  useBottomBarVisible,
+  useTopBarVisible,
+  useZenMode,
+} from '../state'
 import { activeClass } from '../styles'
 
 import { SplitView, useSplitViewItem } from './base'
@@ -40,6 +46,10 @@ import { TypographyView } from './viewlets/TypographyView'
 
 export const Layout: React.FC = ({ children }) => {
   useColorScheme()
+  useZenModeHandler()
+  const [isZenMode] = useZenMode()
+  const [, setTopBarVisible] = useTopBarVisible()
+  const [, setBottomBarVisible] = useBottomBarVisible()
 
   const [ready, setReady] = useState(false)
   const setAction = useSetAction()
@@ -51,11 +61,35 @@ export const Layout: React.FC = ({ children }) => {
     setReady(true)
   }, [mobile, setAction])
 
+  useEffect(() => {
+    if (isZenMode) {
+      setTopBarVisible(false)
+      setBottomBarVisible(false)
+    } else {
+      setTopBarVisible(true)
+      setBottomBarVisible(true)
+    }
+  }, [isZenMode, setTopBarVisible, setBottomBarVisible])
+
   return (
-    <div id="layout" className="select-none">
+    <div id="layout" className="select-none relative">
+      {isZenMode && (
+        <>
+          <div
+            className="absolute top-0 h-8 w-full z-30"
+            onMouseEnter={() => setTopBarVisible(true)}
+            onMouseLeave={() => setTopBarVisible(false)}
+          />
+          <div
+            className="absolute bottom-0 h-8 w-full z-30"
+            onMouseEnter={() => setBottomBarVisible(true)}
+            onMouseLeave={() => setBottomBarVisible(false)}
+          />
+        </>
+      )}
       <SplitView>
-        {mobile === false && <ActivityBar />}
-        {mobile === true && <NavigationBar />}
+        {mobile === false && !isZenMode && <ActivityBar />}
+        {mobile === true && !isZenMode && <NavigationBar />}
         {ready && <SideBar />}
         {ready && <Reader>{children}</Reader>}
       </SplitView>
@@ -147,6 +181,7 @@ interface EnvActionBarProps extends ComponentProps<'div'> {
 function ViewActionBar({ className, env }: EnvActionBarProps) {
   const [action, setAction] = useAction()
   const t = useTranslation()
+  const [isZenMode, setZenMode] = useZenMode()
 
   return (
     <ActionBar className={className}>
@@ -164,6 +199,12 @@ function ViewActionBar({ className, env }: EnvActionBarProps) {
             />
           )
         })}
+      <Action
+        title={t('zen.title')}
+        Icon={RiFocus3Line}
+        active={isZenMode}
+        onClick={() => setZenMode(!isZenMode)}
+      />
     </ActionBar>
   )
 }
@@ -288,11 +329,12 @@ const SideBar: React.FC = () => {
   const [action, setAction] = useAction()
   const mobile = useMobile()
   const t = useTranslation()
+  const [isZenMode] = useZenMode()
 
   const { size } = useSplitViewItem(SideBar, {
     preferredSize: 240,
     minSize: 160,
-    visible: !!action,
+    visible: !!action && !isZenMode,
   })
 
   return (
