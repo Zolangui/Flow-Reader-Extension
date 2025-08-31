@@ -52,22 +52,28 @@ export const Layout: React.FC = ({ children }) => {
     setReady(true)
   }, [mobile, setAction])
 
+  const readerClasses = clsx(
+    'Reader flex-1 overflow-hidden',
+    !isZenMode && (reader.focusedTab?.isBook || 'mb-12 sm:mb-0'),
+  )
+
   return (
     <div id="layout" className="select-none" data-zen-mode={isZenMode}>
       {isZenMode ? (
-        ready && <Reader>{children}</Reader>
+        ready && <div className={readerClasses}>{children}</div>
       ) : (
         <SplitView>
           {mobile === false && <ActivityBar />}
           {mobile === true && <NavigationBar />}
           {ready && <SideBar />}
-          {ready && <Reader>{children}</Reader>}
+          {ready && <SplitReader className={readerClasses}>{children}</SplitReader>}
         </SplitView>
       )}
     </div>
   )
 }
 
+// ... (IAction and viewActions definitions remain the same) ...
 interface IAction {
   name: string
   title: string
@@ -130,6 +136,7 @@ const viewActions: IViewAction[] = [
     env: Env.Desktop | Env.Mobile,
   },
 ]
+
 
 const ActivityBar: React.FC = () => {
   useSplitViewItem(ActivityBar, {
@@ -332,18 +339,13 @@ const SideBar: React.FC = () => {
 }
 
 interface ReaderProps extends ComponentProps<'div'> {}
-const Reader: React.FC = ({ className, ...props }: ReaderProps) => {
-  useSplitViewItem(Reader)
+const SplitReader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => {
+  useSplitViewItem(SplitReader)
   const [bg] = useBackground()
-
-  const r = useReaderSnapshot()
-  const readMode = r.focusedTab?.isBook
-
   return (
     <div
       className={clsx(
-        'Reader flex-1 overflow-hidden',
-        readMode || 'mb-12 sm:mb-0',
+        className,
         bg,
       )}
       {...props}
