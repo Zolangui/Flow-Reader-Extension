@@ -1,5 +1,5 @@
 import { StateLayer } from '@literal-ui/core'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { VscCollapseAll, VscExpandAll } from 'react-icons/vsc'
 
 import {
@@ -70,6 +70,8 @@ const TocPane: React.FC = () => {
     | INavItemSnapshot
     | undefined
 
+  const [lastClickedHref, setLastClickedHref] = useState<string | undefined>()
+
   const { outerRef, innerRef, items, scrollToItem } = useList(rows)
 
   return (
@@ -106,6 +108,8 @@ const TocPane: React.FC = () => {
                 key={item.id}
                 currentNavItem={currentNavItem}
                 item={item}
+                lastClickedHref={lastClickedHref}
+                setLastClickedHref={setLastClickedHref}
                 onActivate={() => scrollToItem(index)}
               />
             )
@@ -119,23 +123,40 @@ const TocPane: React.FC = () => {
 interface TocRowProps {
   currentNavItem?: INavItemSnapshot
   item: INavItemSnapshot
+  lastClickedHref: string | undefined
+  setLastClickedHref: (href: string) => void
   onActivate: () => void
 }
 const TocRow: React.FC<TocRowProps> = ({
   currentNavItem,
   item,
+  lastClickedHref,
+  setLastClickedHref,
   onActivate,
 }) => {
   const { label, subitems, depth, expanded, id, href } = item
+
+  // The official location from the model is the source of truth,
+  // but we also check the last clicked href. This immediately highlights
+  // the clicked item even if the model's update is delayed or doesn't
+  // account for href fragments.
+  const isActive = useMemo(() => {
+    if (lastClickedHref) {
+      return href === lastClickedHref
+    }
+    return href === currentNavItem?.href
+  }, [href, currentNavItem, lastClickedHref])
+
 
   return (
     <Row
       title={label.trim()}
       depth={depth}
-      active={id === currentNavItem?.id}
+      active={isActive}
       expanded={expanded}
       subitems={subitems}
       onClick={() => {
+        setLastClickedHref(href)
         reader.focusedBookTab?.display(href, false)
       }}
       toggle={() => reader.focusedBookTab?.toggle(id)}
