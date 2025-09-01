@@ -1,7 +1,7 @@
 import { useEventListener } from '@literal-ui/hooks'
 import Dexie from 'dexie'
 import { useRouter } from 'next/router'
-import { parseCookies, destroyCookie } from 'nookies'
+import { parseCookies, destroyCookie, setCookie } from 'nookies'
 
 import {
   ColorScheme,
@@ -17,7 +17,7 @@ import { Page } from '../Page'
 
 export const Settings: React.FC = () => {
   const { scheme, setScheme } = useColorScheme()
-  const { asPath, push, locale } = useRouter()
+  const { locale } = useRouter()
   const t = useTranslation('settings')
 
   return (
@@ -27,7 +27,9 @@ export const Settings: React.FC = () => {
           <Select
             value={locale}
             onChange={(e) => {
-              push(asPath, undefined, { locale: e.target.value })
+              const locale = e.target.value
+              setCookie(null, 'NEXT_LOCALE', locale, { path: '/' })
+              window.location.reload()
             }}
           >
             <option value="en-US">English</option>
