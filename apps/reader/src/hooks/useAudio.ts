@@ -1,65 +1,83 @@
-import { useCallback, useEffect, useRef } from 'react'
-import { useRecoilState } from 'recoil'
+// hooks/useAudio.ts
+import { useCallback, useEffect, useRef } from 'react';
+import { useRecoilState } from 'recoil';
 
-import { audioState } from '../state'
-
-// This code is adapted from the article at https://noisehack.com/generate-noise-web-audio-api/
-
-const createPinkNoiseNode = (audioContext: AudioContext) => {
-  const bufferSize = 4096
-  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0
-  const node = audioContext.createScriptProcessor(bufferSize, 1, 1)
-
-  node.onaudioprocess = (e) => {
-    const output = e.outputBuffer.getChannelData(0)
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1
-      b0 = 0.99886 * b0 + white * 0.0555179
-      b1 = 0.99332 * b1 + white * 0.0750759
-      b2 = 0.96900 * b2 + white * 0.1538520
-      b3 = 0.86650 * b3 + white * 0.3104856
-      b4 = 0.55000 * b4 + white * 0.5329522
-      b5 = -0.7616 * b5 - white * 0.016898
-      output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362
-      output[i] *= 0.11 // compensate for gain
-      b6 = white * 0.115926
-    }
-  }
-  return node
-}
+import { audioState } from '../state';
 
 export const useAudio = () => {
-  const [audio, setAudio] = useRecoilState(audioState)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const pinkNoiseNodeRef = useRef<ScriptProcessorNode | null>(null)
+  const [audio, setAudio] = useRecoilState(audioState);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
 
-  const getAudioContext = useCallback(() => {
+  // Função para inicializar o AudioContext e carregar o módulo do worklet
+  const initAudio = useCallback(async () => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-    }
-    return audioContextRef.current
-  }, [])
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // NOTE: The path must be relative to the root of the public folder
+      await context.audioWorklet.addModule('/pink-noise-processor.js');
+      audioContextRef.current = context;
 
-  const getPinkNoiseNode = useCallback(() => {
-    const audioContext = getAudioContext()
-    if (!pinkNoiseNodeRef.current) {
-      pinkNoiseNodeRef.current = createPinkNoiseNode(audioContext)
+      const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
+      const gainNode = context.createGain();
+
+      gainNode.gain.setValueAtTime(audio.volume, context.currentTime); // Define o volume inicial
+      noiseNode.connect(gainNode); // Conecta o ruído ao volume
+
+      noiseNodeRef.current = noiseNode;
+      gainNodeRef.current = gainNode;
     }
-    return pinkNoiseNodeRef.current
-  }, [getAudioContext])
+    return {
+      context: audioContextRef.current,
+      gainNode: gainNodeRef.current!,
+    };
+  }, [audio.volume]);
 
   useEffect(() => {
-    const node = getPinkNoiseNode()
-    if (audio.isPlaying) {
-      node.connect(getAudioContext().destination)
-    } else {
-      node.disconnect()
+    // A função principal do efeito agora é assíncrona para lidar com a inicialização
+    const manageAudio = async () => {
+      // Se não for para tocar, desconecta e para.
+      if (!audio.isPlaying) {
+        gainNodeRef.current?.disconnect();
+        return;
+      }
+
+      // Garante que o contexto de áudio seja resumido (política de autoplay)
+      if (audioContextRef.current?.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
+      const { context, gainNode } = await initAudio();
+      gainNode.connect(context.destination); // Conecta o nó de volume à saída de áudio
+    };
+
+    manageAudio();
+
+    // Função de limpeza para quando o componente desmontar
+    return () => {
+      gainNodeRef.current?.disconnect();
+    };
+  }, [audio.isPlaying, initAudio]);
+
+  // Efeito separado para controlar o volume em tempo real
+  useEffect(() => {
+    if (gainNodeRef.current && audioContextRef.current) {
+      gainNodeRef.current.gain.setValueAtTime(audio.volume, audioContextRef.current.currentTime);
     }
-  }, [audio.isPlaying, getAudioContext, getPinkNoiseNode])
+  }, [audio.volume]);
 
-  const play = () => setAudio((prev) => ({ ...prev, isPlaying: true }))
-  const pause = () => setAudio((prev) => ({ ...prev, isPlaying: false }))
-  const toggle = () => setAudio((prev) => ({ ...prev, isPlaying: !prev.isPlaying }))
+  // Funções de controle
+  const play = async () => {
+    // Garante que o audioContext esteja inicializado e resumido antes de tocar
+    if (audioContextRef.current?.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+    await initAudio(); // Garante que tudo esteja pronto
+    setAudio((prev) => ({ ...prev, isPlaying: true }));
+  };
+  const pause = () => setAudio((prev) => ({ ...prev, isPlaying: false }));
+  const toggle = () => (audio.isPlaying ? pause() : play());
+  const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
 
-  return { isPlaying: audio.isPlaying, play, pause, toggle }
-}
+  return { isPlaying: audio.isPlaying, volume: audio.volume, play, pause, toggle, setVolume };
+};
