@@ -9,11 +9,11 @@ export const useAudio = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const reverbNodeRef = useRef<ConvolverNode | null>(null);
   const pannerNodeRef = useRef<PannerNode | null>(null);
-
   const lfoXRef = useRef<OscillatorNode | null>(null);
   const lfoZRef = useRef<OscillatorNode | null>(null);
+  const lfoGainRef = useRef<GainNode | null>(null);
+
 
   const initAudio = useCallback(async () => {
     if (audioContextRef.current) return;
@@ -29,7 +29,6 @@ export const useAudio = () => {
 
     const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
     const pannerNode = context.createPanner();
-    const reverbNode = context.createConvolver();
     const gainNode = context.createGain();
 
     pannerNode.panningModel = 'HRTF';
@@ -39,64 +38,75 @@ export const useAudio = () => {
     const lfoX = context.createOscillator();
     const lfoZ = context.createOscillator();
     const lfoGain = context.createGain();
-    lfoGain.gain.value = 3;
 
+    lfoGain.gain.value = 3;
     lfoX.type = 'sine';
     lfoZ.type = 'sine';
-    lfoX.frequency.value = 0.15;
-    lfoZ.frequency.value = 0.15;
+    lfoX.frequency.value = audio.orbitSpeed;
+    lfoZ.frequency.value = audio.orbitSpeed;
 
-    lfoX.connect(lfoGain).connect(pannerNode.positionX);
-    lfoZ.connect(lfoGain).connect(pannerNode.positionZ);
     lfoX.start();
     lfoZ.start();
 
-    try {
-        const response = await fetch('/ir-hall.wav');
-        const arrayBuffer = await response.arrayBuffer();
-        reverbNode.buffer = await context.decodeAudioData(arrayBuffer);
-    } catch (e) {
-        console.error('Error loading reverb impulse response', e);
-    }
-
     noiseNode.connect(pannerNode);
-    pannerNode.connect(reverbNode);
-    reverbNode.connect(gainNode);
+    pannerNode.connect(gainNode);
 
     noiseNodeRef.current = noiseNode;
     pannerNodeRef.current = pannerNode;
-    reverbNodeRef.current = reverbNode;
     gainNodeRef.current = gainNode;
     lfoXRef.current = lfoX;
     lfoZRef.current = lfoZ;
+    lfoGainRef.current = lfoGain;
 
-  }, []);
+  }, [audio.orbitSpeed]);
 
   useEffect(() => {
     const manageAudio = async () => {
       await initAudio();
       const context = audioContextRef.current;
       const gainNode = gainNodeRef.current;
+      const pannerNode = pannerNodeRef.current;
+      const lfoX = lfoXRef.current;
+      const lfoZ = lfoZRef.current;
+      const lfoGain = lfoGainRef.current;
 
-      if (!context || !gainNode) return;
+      if (!context || !gainNode || !pannerNode || !lfoX || !lfoZ || !lfoGain) return;
 
       if (audio.isPlaying) {
         if (context.state === 'suspended') {
           await context.resume();
         }
         gainNode.connect(context.destination);
+
+        if (audio.is8DEnabled) {
+          lfoX.connect(lfoGain).connect(pannerNode.positionX);
+          lfoZ.connect(lfoGain).connect(pannerNode.positionZ);
+        } else {
+          lfoX.disconnect();
+          lfoZ.disconnect();
+          pannerNode.positionX.value = 0;
+          pannerNode.positionZ.value = 0;
+        }
+
       } else {
         gainNode.disconnect();
       }
     };
     manageAudio();
-  }, [audio.isPlaying, initAudio]);
+  }, [audio.isPlaying, audio.is8DEnabled, initAudio]);
 
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
-      gainNodeRef.current.gain.setValueAtTime(audio.volume, audioContextRef.current.currentTime);
+      gainNodeRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
     }
   }, [audio.volume]);
+
+  useEffect(() => {
+    if (lfoXRef.current && lfoZRef.current && audioContextRef.current) {
+      lfoXRef.current.frequency.linearRampToValueAtTime(audio.orbitSpeed, audioContextRef.current.currentTime + 0.1);
+      lfoZRef.current.frequency.linearRampToValueAtTime(audio.orbitSpeed, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.orbitSpeed]);
 
   const toggle = async () => {
     await initAudio();
@@ -108,11 +118,8 @@ export const useAudio = () => {
   };
 
   const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
+  const setOrbitSpeed = (speed: number) => setAudio((prev) => ({...prev, orbitSpeed: speed}));
+  const toggle8D = () => setAudio((prev) => ({...prev, is8DEnabled: !prev.is8DEnabled}));
 
-  return {
-    isPlaying: audio.isPlaying,
-    volume: audio.volume,
-    toggle,
-    setVolume
-  };
+  return { ...audio, toggle, setVolume, setOrbitSpeed, toggle8D };
 };
