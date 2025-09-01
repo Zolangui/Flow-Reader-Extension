@@ -41,6 +41,7 @@ export default {
   'typography.zoom': '缩放',
 
   'theme.title': '颜色主题',
+  'audio.title': '氛围',
   'theme.source_color': '源色',
   'theme.background_color': '背景色',
 

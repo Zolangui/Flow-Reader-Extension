@@ -41,6 +41,7 @@ export default {
   'typography.zoom': 'ズーム',
 
   'theme.title': 'テーマ',
+  'audio.title': 'アンビエンス',
   'theme.source_color': 'ソースカラー',
   'theme.background_color': '背景色',
 

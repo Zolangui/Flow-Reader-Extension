@@ -68,3 +68,10 @@ const settingsState = atom<Settings>({
 export function useSettings() {
   return useRecoilState(settingsState)
 }
+
+export const audioState = atom({
+  key: 'audio',
+  default: {
+    isPlaying: false,
+  },
+})

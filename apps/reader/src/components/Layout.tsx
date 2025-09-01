@@ -5,6 +5,7 @@ import { IconType } from 'react-icons'
 import {
   MdFormatUnderlined,
   MdOutlineImage,
+  MdMusicNote,
   MdSearch,
   MdToc,
   MdTimeline,
@@ -31,6 +32,7 @@ import { activeClass } from '../styles'
 import { SplitView, useSplitViewItem } from './base'
 import { Settings } from './pages'
 import { AnnotationView } from './viewlets/AnnotationView'
+import { AudioView } from './viewlets/AudioView'
 import { ImageView } from './viewlets/ImageView'
 import { SearchView } from './viewlets/SearchView'
 import { ThemeView } from './viewlets/ThemeView'
@@ -123,6 +125,13 @@ const viewActions: IViewAction[] = [
     title: 'theme',
     Icon: MdOutlineLightMode,
     View: ThemeView,
+    env: Env.Desktop | Env.Mobile,
+  },
+  {
+    name: 'audio',
+    title: 'audio',
+    Icon: MdMusicNote,
+    View: AudioView,
     env: Env.Desktop | Env.Mobile,
   },
 ]
