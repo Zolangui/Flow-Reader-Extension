@@ -3,7 +3,6 @@ import { useRecoilState } from 'recoil';
 
 import { audioState } from '../state';
 
-// Creates a "swooshing" flanger effect
 const createFlanger = (context: AudioContext) => {
     const input = context.createGain();
     const output = context.createGain();
@@ -31,23 +30,22 @@ const createFlanger = (context: AudioContext) => {
     return { input, output };
 };
 
-// Creates a rich, stereo, programmatic reverb effect
 const createProgrammaticReverb = (context: AudioContext) => {
-    const reverbTime = 3.0;
     const input = context.createGain();
     const output = context.createGain();
     const filter = context.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 2500;
-    const delay = context.createDelay(reverbTime);
+    filter.frequency.value = 3500;
+    const delay = context.createDelay(3.0);
     const feedback = context.createGain();
     feedback.gain.value = 0.6;
+
     input.connect(delay);
     delay.connect(filter);
     filter.connect(feedback);
     feedback.connect(delay);
     delay.connect(output);
-    input.connect(output);
+
     return { input, output };
 };
 
@@ -56,65 +54,82 @@ export const useAudio = () => {
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
+  const dryGainRef = useRef<GainNode | null>(null);
+  const wetGainRef = useRef<GainNode | null>(null);
 
   const initAudio = useCallback(async () => {
-    if (audioContextRef.current) return audioContextRef.current;
+    if (audioContextRef.current) return;
 
     const context = new (window.AudioContext || (window as any).webkitAudioContext)();
     try {
-      await context.audioWorklet.addModule('/pink-noise-processor.js');
+        await context.audioWorklet.addModule('/pink-noise-processor.js');
     } catch(e) {
-      console.error("Error loading audio worklet module", e);
-      return;
+        console.error("Error loading audio worklet module", e);
+        return;
     }
     audioContextRef.current = context;
 
     const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
-    const gainNode = context.createGain();
-    const lowpassFilter = context.createBiquadFilter();
+    const masterGain = context.createGain();
+    const dryGain = context.createGain();
+    const wetGain = context.createGain();
+
     const flanger = createFlanger(context);
     const reverb = createProgrammaticReverb(context);
 
-    lowpassFilter.type = 'lowpass';
-    lowpassFilter.frequency.value = 800;
-    lowpassFilter.Q.value = 1;
+    // Main audio chain:
+    // Noise -> Dry Path -> Master Gain
+    //       -> Wet Path (Flanger -> Reverb) -> Master Gain
 
-    // Audio Chain: Noise -> Filter -> Flanger -> Reverb -> Gain -> Output
-    noiseNode.connect(lowpassFilter);
-    lowpassFilter.connect(flanger.input);
+    noiseNode.connect(dryGain);
+    dryGain.connect(masterGain);
+
+    noiseNode.connect(flanger.input);
     flanger.output.connect(reverb.input);
-    reverb.output.connect(gainNode);
+    reverb.output.connect(wetGain);
+    wetGain.connect(masterGain);
 
     noiseNodeRef.current = noiseNode;
-    gainNodeRef.current = gainNode;
-
-    return context;
+    masterGainRef.current = masterGain;
+    dryGainRef.current = dryGain;
+    wetGainRef.current = wetGain;
   }, []);
 
   useEffect(() => {
     const manageAudio = async () => {
       await initAudio();
       const context = audioContextRef.current;
-      const gainNode = gainNodeRef.current;
+      const masterGain = masterGainRef.current;
 
-      if (!context || !gainNode) return;
+      if (!context || !masterGain) return;
 
       if (audio.isPlaying) {
         if (context.state === 'suspended') { await context.resume(); }
-        gainNode.connect(context.destination);
+        masterGain.connect(context.destination);
       } else {
-        gainNode.disconnect();
+        masterGain.disconnect();
       }
     };
     manageAudio();
   }, [audio.isPlaying, initAudio]);
 
   useEffect(() => {
-    if (gainNodeRef.current && audioContextRef.current) {
-        gainNodeRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
+    if (masterGainRef.current && audioContextRef.current) {
+        masterGainRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
     }
   }, [audio.volume]);
+
+  useEffect(() => {
+    if (wetGainRef.current && audioContextRef.current) {
+        // Ambiance Mix controls the volume of the "wet" signal path
+        wetGainRef.current.gain.linearRampToValueAtTime(audio.ambianceMix, audioContextRef.current.currentTime + 0.1);
+    }
+    if (dryGainRef.current && audioContextRef.current) {
+        // The dry signal is 1.0 minus the wet signal, to maintain constant overall energy
+        dryGainRef.current.gain.linearRampToValueAtTime(1.0 - audio.ambianceMix, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.ambianceMix]);
 
   const toggle = async () => {
     await initAudio();
@@ -124,6 +139,7 @@ export const useAudio = () => {
   };
 
   const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
+  const setAmbianceMix = (mix: number) => setAudio((prev) => ({ ...prev, ambianceMix: mix }));
 
-  return { ...audio, toggle, setVolume };
+  return { ...audio, toggle, setVolume, setAmbianceMix };
 };

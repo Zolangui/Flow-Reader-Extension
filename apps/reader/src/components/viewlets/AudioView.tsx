@@ -4,7 +4,7 @@ import { Button } from '../Button'
 import { PaneView, PaneViewProps } from '../base'
 
 export const AudioView: React.FC<PaneViewProps> = (props) => {
-  const { isPlaying, volume, toggle, setVolume } = useAudio()
+  const { isPlaying, volume, ambianceMix, toggle, setVolume, setAmbianceMix } = useAudio()
 
   return (
     <PaneView {...props}>
@@ -28,6 +28,23 @@ export const AudioView: React.FC<PaneViewProps> = (props) => {
             step="0.01"
             value={volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
+            className="w-full"
+            disabled={!isPlaying}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="ambiance" className="mb-2 block font-semibold">
+            Ambiance (Reverb/Effect Mix)
+          </label>
+          <input
+            id="ambiance"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={ambianceMix}
+            onChange={(e) => setAmbianceMix(parseFloat(e.target.value))}
             className="w-full"
             disabled={!isPlaying}
           />

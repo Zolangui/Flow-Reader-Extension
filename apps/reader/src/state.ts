@@ -74,5 +74,6 @@ export const audioState = atom({
   default: {
     isPlaying: false,
     volume: 0.5,
+    ambianceMix: 0.5, // Represents the wet/dry mix for effects
   },
 })
