@@ -1,11 +1,10 @@
 import { useAudio } from '@flow/reader/hooks'
 
 import { Button } from '../Button'
-import { Checkbox } from '../Form'
 import { PaneView, PaneViewProps } from '../base'
 
 export const AudioView: React.FC<PaneViewProps> = (props) => {
-  const { isPlaying, volume, is8DEnabled, orbitSpeed, toggle, setVolume, toggle8D, setOrbitSpeed } = useAudio()
+  const { isPlaying, volume, toggle, setVolume } = useAudio()
 
   return (
     <PaneView {...props}>
@@ -33,31 +32,6 @@ export const AudioView: React.FC<PaneViewProps> = (props) => {
             disabled={!isPlaying}
           />
         </div>
-
-        <Checkbox
-          name="8D Effect"
-          checked={is8DEnabled}
-          onChange={toggle8D}
-          disabled={!isPlaying}
-        />
-
-        <div>
-          <label htmlFor="orbitSpeed" className="mb-2 block font-semibold">
-            Orbit Speed
-          </label>
-          <input
-            id="orbitSpeed"
-            type="range"
-            min="0.05"
-            max="0.5"
-            step="0.01"
-            value={orbitSpeed}
-            onChange={(e) => setOrbitSpeed(parseFloat(e.target.value))}
-            className="w-full"
-            disabled={!isPlaying || !is8DEnabled}
-          />
-        </div>
-
       </div>
     </PaneView>
   )

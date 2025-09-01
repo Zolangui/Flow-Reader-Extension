@@ -74,7 +74,5 @@ export const audioState = atom({
   default: {
     isPlaying: false,
     volume: 0.5,
-    is8DEnabled: true,
-    orbitSpeed: 0.15,
   },
 })
