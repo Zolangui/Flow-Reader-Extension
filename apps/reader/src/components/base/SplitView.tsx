@@ -50,6 +50,13 @@ function useSize(
     },
     [maxSize, minSize],
   )
+
+  useEffect(() => {
+    if (preferredSize !== undefined) {
+      setSize(preferredSize)
+    }
+  }, [preferredSize])
+
   return [size, resize] as const
 }
 

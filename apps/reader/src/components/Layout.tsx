@@ -28,7 +28,7 @@ import { reader, useReaderSnapshot } from '../models'
 import { navbarState, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
-import { useSplitViewItem } from './base'
+import { SplitView, useSplitViewItem } from './base'
 import { Settings } from './pages'
 import { AnnotationView } from './viewlets/AnnotationView'
 import { ImageView } from './viewlets/ImageView'
@@ -53,13 +53,13 @@ export const Layout: React.FC = ({ children }) => {
   }, [mobile, setAction])
 
   return (
-    <div id="layout" className="flex h-screen select-none">
-      {!isZenMode && mobile === false && <ActivityBar />}
-      {!isZenMode && mobile === true && <NavigationBar />}
-      <div className="relative flex flex-1">
+    <div id="layout" className="select-none">
+      <SplitView>
+        {!isZenMode && mobile === false && <ActivityBar />}
+        {!isZenMode && mobile === true && <NavigationBar />}
         {!isZenMode && ready && <SideBar />}
         {ready && <Reader>{children}</Reader>}
-      </div>
+      </SplitView>
     </div>
   )
 }
@@ -296,23 +296,44 @@ const SideBar: React.FC = () => {
   const [action, setAction] = useAction()
   const mobile = useMobile()
   const t = useTranslation()
+  const [renderedAction, setRenderedAction] = useState(action)
+
+  const { size } = useSplitViewItem(SideBar, {
+    preferredSize: action ? 240 : 0,
+    minSize: 0,
+    maxSize: 240,
+    visible: true, // Let it be draggable even when closed
+  })
+
+  useEffect(() => {
+    if (action) {
+      setRenderedAction(action)
+    }
+  }, [action])
+
+  const onTransitionEnd = () => {
+    if (!action) {
+      setRenderedAction(undefined)
+    }
+  }
 
   return (
     <>
       {action && mobile && <Overlay onClick={() => setAction(undefined)} />}
       <div
         className={clsx(
-          'SideBar bg-surface z-10 flex h-full w-60 flex-col transition-transform duration-300 ease-in-out',
-          action ? 'translate-x-0' : '-translate-x-full',
-          mobile ? 'absolute inset-y-0 right-0' : '',
+          'SideBar bg-surface flex flex-col overflow-hidden transition-all duration-200 ease-in-out',
+          mobile ? 'absolute inset-y-0 right-0 z-10' : '',
         )}
+        style={{ width: mobile ? '75%' : size }}
+        onTransitionEnd={onTransitionEnd}
       >
         {viewActions.map(({ name, title, View }) => (
           <View
             key={name}
             name={t(`${name}.title`)}
             title={t(`${title}.title`)}
-            className={clsx(name !== action && '!hidden')}
+            className={clsx(name !== renderedAction && 'hidden')}
           />
         ))}
       </div>
@@ -322,7 +343,7 @@ const SideBar: React.FC = () => {
 
 interface ReaderProps extends ComponentProps<'div'> {}
 const Reader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => {
-  const [action] = useAction()
+  useSplitViewItem(Reader)
   const [bg] = useBackground()
 
   const r = useReaderSnapshot()
@@ -331,9 +352,8 @@ const Reader: React.FC<ReaderProps> = ({ className, ...props }: ReaderProps) => 
   return (
     <div
       className={clsx(
-        'Reader absolute inset-0 transition-all duration-300 ease-in-out',
+        'Reader flex-1 overflow-hidden',
         readMode || 'mb-12 sm:mb-0',
-        action ? 'ml-60' : 'ml-0',
         bg,
       )}
       {...props}
