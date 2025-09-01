@@ -301,7 +301,6 @@ const SideBar: React.FC = () => {
   const { size } = useSplitViewItem(SideBar, {
     preferredSize: action ? 240 : 0,
     minSize: 0,
-    maxSize: 240,
     visible: true, // Let it be draggable even when closed
   })
 
@@ -317,6 +316,11 @@ const SideBar: React.FC = () => {
     }
   }
 
+  const CurrentView = useMemo(
+    () => viewActions.find((v) => v.name === renderedAction)?.View,
+    [renderedAction],
+  )
+
   return (
     <>
       {action && mobile && <Overlay onClick={() => setAction(undefined)} />}
@@ -328,14 +332,12 @@ const SideBar: React.FC = () => {
         style={{ width: mobile ? '75%' : size }}
         onTransitionEnd={onTransitionEnd}
       >
-        {viewActions.map(({ name, title, View }) => (
-          <View
-            key={name}
-            name={t(`${name}.title`)}
-            title={t(`${title}.title`)}
-            className={clsx(name !== renderedAction && 'hidden')}
+        {CurrentView && (
+          <CurrentView
+            name={t(`${renderedAction}.title`)}
+            title={t(`${renderedAction}.title`)}
           />
-        ))}
+        )}
       </div>
     </>
   )
