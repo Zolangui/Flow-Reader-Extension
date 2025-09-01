@@ -74,5 +74,7 @@ export const audioState = atom({
   default: {
     isPlaying: false,
     volume: 0.5,
+    is8DEnabled: true,
+    distance: 4000, // Represents filter frequency
   },
 })

@@ -1,4 +1,3 @@
-// hooks/useAudio.ts
 import { useCallback, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 
@@ -6,78 +5,111 @@ import { audioState } from '../state';
 
 export const useAudio = () => {
   const [audio, setAudio] = useRecoilState(audioState);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const filterNodeRef = useRef<BiquadFilterNode | null>(null);
+  const pannerNodeRef = useRef<StereoPannerNode | null>(null);
+  const lfoRef = useRef<OscillatorNode | null>(null);
 
-  // Função para inicializar o AudioContext e carregar o módulo do worklet
   const initAudio = useCallback(async () => {
-    if (!audioContextRef.current) {
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-      // NOTE: The path must be relative to the root of the public folder
+    if (audioContextRef.current) return audioContextRef.current;
+
+    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    try {
       await context.audioWorklet.addModule('/pink-noise-processor.js');
-      audioContextRef.current = context;
-
-      const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
-      const gainNode = context.createGain();
-
-      gainNode.gain.setValueAtTime(audio.volume, context.currentTime); // Define o volume inicial
-      noiseNode.connect(gainNode); // Conecta o ruído ao volume
-
-      noiseNodeRef.current = noiseNode;
-      gainNodeRef.current = gainNode;
+    } catch (e) {
+      console.error('Error loading audio worklet module', e);
+      return null;
     }
-    return {
-      context: audioContextRef.current,
-      gainNode: gainNodeRef.current!,
-    };
-  }, [audio.volume]);
+    audioContextRef.current = context;
+
+    const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
+    const gainNode = context.createGain();
+    const filterNode = context.createBiquadFilter();
+    const pannerNode = context.createStereoPanner();
+    const lfo = context.createOscillator();
+    const lfoGain = context.createGain();
+
+    filterNode.type = 'lowpass';
+    filterNode.frequency.value = audio.distance;
+
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.1;
+    lfoGain.gain.value = 0.8;
+
+    noiseNode.connect(filterNode);
+    filterNode.connect(pannerNode);
+    pannerNode.connect(gainNode);
+
+    lfo.connect(lfoGain).connect(pannerNode.pan);
+    lfo.start();
+
+    noiseNodeRef.current = noiseNode;
+    gainNodeRef.current = gainNode;
+    filterNodeRef.current = filterNode;
+    pannerNodeRef.current = pannerNode;
+    lfoRef.current = lfo;
+
+    return context;
+  }, [audio.distance]);
 
   useEffect(() => {
-    // A função principal do efeito agora é assíncrona para lidar com a inicialização
     const manageAudio = async () => {
-      // Se não for para tocar, desconecta e para.
-      if (!audio.isPlaying) {
-        gainNodeRef.current?.disconnect();
-        return;
-      }
+      const context = await initAudio();
+      if (!context) return;
 
-      // Garante que o contexto de áudio seja resumido (política de autoplay)
-      if (audioContextRef.current?.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
+      const gainNode = gainNodeRef.current!;
+      const pannerNode = pannerNodeRef.current!;
 
-      const { context, gainNode } = await initAudio();
-      gainNode.connect(context.destination); // Conecta o nó de volume à saída de áudio
+      if (audio.isPlaying) {
+        if (context.state === 'suspended') {
+          await context.resume();
+        }
+        gainNode.connect(context.destination);
+        if (audio.is8DEnabled) {
+          lfoRef.current?.connect(pannerNode.pan);
+        } else {
+          lfoRef.current?.disconnect();
+          pannerNode.pan.value = 0; // Center the pan
+        }
+      } else {
+        gainNode.disconnect();
+      }
     };
 
     manageAudio();
 
-    // Função de limpeza para quando o componente desmontar
     return () => {
       gainNodeRef.current?.disconnect();
     };
-  }, [audio.isPlaying, initAudio]);
+  }, [audio.isPlaying, audio.is8DEnabled, initAudio]);
 
-  // Efeito separado para controlar o volume em tempo real
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
-      gainNodeRef.current.gain.setValueAtTime(audio.volume, audioContextRef.current.currentTime);
+        gainNodeRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
     }
   }, [audio.volume]);
 
-  // Funções de controle
-  const play = async () => {
-    // Garante que o audioContext esteja inicializado e resumido antes de tocar
-    if (audioContextRef.current?.state === 'suspended') {
-      await audioContextRef.current.resume();
+  useEffect(() => {
+    if (filterNodeRef.current && audioContextRef.current) {
+        filterNodeRef.current.frequency.linearRampToValueAtTime(audio.distance, audioContextRef.current.currentTime + 0.1);
     }
-    await initAudio(); // Garante que tudo esteja pronto
-    setAudio((prev) => ({ ...prev, isPlaying: true }));
-  };
-  const pause = () => setAudio((prev) => ({ ...prev, isPlaying: false }));
-  const toggle = () => (audio.isPlaying ? pause() : play());
-  const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
+  }, [audio.distance]);
 
-  return { isPlaying: audio.isPlaying, volume: audio.volume, play, pause, toggle, setVolume };
+  const toggle = async () => {
+    const context = audioContextRef.current;
+    if (context && context.state === 'suspended') {
+      await context.resume();
+    }
+    await initAudio();
+    setAudio((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
+  };
+
+  const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
+  const setDistance = (distance: number) => setAudio((prev) => ({...prev, distance}));
+  const toggle8D = () => setAudio((prev) => ({...prev, is8DEnabled: !prev.is8DEnabled}));
+
+  return { ...audio, toggle, setVolume, setDistance, toggle8D };
 };
