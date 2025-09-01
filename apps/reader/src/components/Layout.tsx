@@ -298,9 +298,10 @@ const SideBar: React.FC = () => {
   const t = useTranslation()
 
   const { size } = useSplitViewItem(SideBar, {
-    preferredSize: 240,
-    minSize: 160,
-    visible: !!action,
+    preferredSize: action ? 240 : 0,
+    minSize: 0,
+    maxSize: 240,
+    visible: true,
   })
 
   return (
@@ -308,8 +309,7 @@ const SideBar: React.FC = () => {
       {action && mobile && <Overlay onClick={() => setAction(undefined)} />}
       <div
         className={clsx(
-          'SideBar bg-surface flex flex-col',
-          !action && '!hidden',
+          'SideBar bg-surface flex flex-col transition-all duration-300 ease-in-out',
           mobile ? 'absolute inset-y-0 right-0 z-10' : '',
         )}
         style={{ width: mobile ? '75%' : size }}
