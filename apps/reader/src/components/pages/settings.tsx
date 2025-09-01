@@ -1,7 +1,6 @@
 import { useEventListener } from '@literal-ui/hooks'
 import Dexie from 'dexie'
-import { useRouter } from 'next/router'
-import { parseCookies, destroyCookie, setCookie } from 'nookies'
+import { parseCookies, destroyCookie } from 'nookies'
 
 import {
   ColorScheme,
@@ -9,6 +8,7 @@ import {
   useForceRender,
   useTranslation,
 } from '@flow/reader/hooks'
+import { useSettings } from '@flow/reader/state'
 import { dbx, mapToToken, OAUTH_SUCCESS_MESSAGE } from '@flow/reader/sync'
 
 import { Button } from '../Button'
@@ -17,7 +17,7 @@ import { Page } from '../Page'
 
 export const Settings: React.FC = () => {
   const { scheme, setScheme } = useColorScheme()
-  const { locale } = useRouter()
+  const [settings, setSettings] = useSettings()
   const t = useTranslation('settings')
 
   return (
@@ -25,11 +25,9 @@ export const Settings: React.FC = () => {
       <div className="space-y-6">
         <Item title={t('language')}>
           <Select
-            value={locale}
+            value={settings.locale || 'en-US'}
             onChange={(e) => {
-              const locale = e.target.value
-              setCookie(null, 'NEXT_LOCALE', locale, { path: '/' })
-              window.location.reload()
+              setSettings({ ...settings, locale: e.target.value })
             }}
           >
             <option value="en-US">English</option>

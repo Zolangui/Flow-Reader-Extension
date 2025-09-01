@@ -1,12 +1,11 @@
-import { useRouter } from 'next/router'
 import { useCallback } from 'react'
 
 import locales from '../../locales'
+import { useSettings } from '../state'
 
 export function useTranslation(scope?: string) {
-  const { locale: originalLocale } = useRouter()
-  const isExport = process.env.NEXT_PUBLIC_IS_EXPORT === 'true'
-  const locale = isExport ? 'en-US' : originalLocale
+  const [settings] = useSettings()
+  const locale = settings.locale || 'en-US'
 
   return useCallback(
     (key: string) => {

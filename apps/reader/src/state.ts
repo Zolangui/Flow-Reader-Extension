@@ -39,6 +39,7 @@ export function useZenMode() {
 
 export interface Settings extends TypographyConfiguration {
   theme?: ThemeConfiguration
+  locale?: string
 }
 
 export interface TypographyConfiguration {
