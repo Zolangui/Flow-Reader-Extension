@@ -3,43 +3,53 @@ import { useRecoilState } from 'recoil';
 
 import { audioState } from '../state';
 
-// Creates a more complex and convincing stereo reverb effect using multiple delays and filters.
-const createProgrammaticReverb = (context: AudioContext) => {
+// Creates a "swooshing" flanger effect
+const createFlanger = (context: AudioContext) => {
     const input = context.createGain();
     const output = context.createGain();
-    const splitter = context.createChannelSplitter(2);
-    const merger = context.createChannelMerger(2);
+    const delay = context.createDelay(0.1);
+    const feedback = context.createGain();
+    feedback.gain.value = 0.5;
 
-    input.connect(splitter);
+    const lfo = context.createOscillator();
+    const lfoGain = context.createGain();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.05;
+    lfoGain.gain.value = 0.003;
 
-    // Creates two delay lines (one for left, one for right) for a stereo effect
-    for (let i = 0; i < 2; i++) {
-        const delay = context.createDelay(i === 0 ? 2.0 : 1.49);
-        const feedback = context.createGain();
-        feedback.gain.value = 0.65;
-        const filter = context.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 3000;
+    input.connect(delay);
+    delay.connect(feedback);
+    feedback.connect(delay);
 
-        splitter.connect(delay, i, 0);
-        delay.connect(filter);
-        filter.connect(feedback);
-        feedback.connect(delay);
+    lfo.connect(lfoGain);
+    lfoGain.connect(delay.delayTime);
+    lfo.start();
 
-        delay.connect(merger, 0, i);
-    }
-
-    merger.connect(output);
-
-    // Dry/Wet mix to control intensity
-    const wetGain = context.createGain();
-    wetGain.gain.value = 0.5; // 50% reverb
-    input.connect(wetGain);
-    wetGain.connect(output);
+    input.connect(output);
+    delay.connect(output);
 
     return { input, output };
 };
 
+// Creates a rich, stereo, programmatic reverb effect
+const createProgrammaticReverb = (context: AudioContext) => {
+    const reverbTime = 3.0;
+    const input = context.createGain();
+    const output = context.createGain();
+    const filter = context.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2500;
+    const delay = context.createDelay(reverbTime);
+    const feedback = context.createGain();
+    feedback.gain.value = 0.6;
+    input.connect(delay);
+    delay.connect(filter);
+    filter.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(output);
+    input.connect(output);
+    return { input, output };
+};
 
 export const useAudio = () => {
   const [audio, setAudio] = useRecoilState(audioState);
@@ -47,31 +57,37 @@ export const useAudio = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const reverbInputRef = useRef<GainNode | null>(null);
 
   const initAudio = useCallback(async () => {
     if (audioContextRef.current) return audioContextRef.current;
 
     const context = new (window.AudioContext || (window as any).webkitAudioContext)();
     try {
-        await context.audioWorklet.addModule('/pink-noise-processor.js');
+      await context.audioWorklet.addModule('/pink-noise-processor.js');
     } catch(e) {
-        console.error("Error loading audio worklet module", e);
-        return;
+      console.error("Error loading audio worklet module", e);
+      return;
     }
     audioContextRef.current = context;
 
     const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
-    const gainNode = context.createGain(); // Master Volume
+    const gainNode = context.createGain();
+    const lowpassFilter = context.createBiquadFilter();
+    const flanger = createFlanger(context);
     const reverb = createProgrammaticReverb(context);
 
-    // Audio Chain: Noise -> Reverb -> Master Volume -> Output
-    noiseNode.connect(reverb.input);
+    lowpassFilter.type = 'lowpass';
+    lowpassFilter.frequency.value = 800;
+    lowpassFilter.Q.value = 1;
+
+    // Audio Chain: Noise -> Filter -> Flanger -> Reverb -> Gain -> Output
+    noiseNode.connect(lowpassFilter);
+    lowpassFilter.connect(flanger.input);
+    flanger.output.connect(reverb.input);
     reverb.output.connect(gainNode);
 
     noiseNodeRef.current = noiseNode;
     gainNodeRef.current = gainNode;
-    reverbInputRef.current = reverb.input;
 
     return context;
   }, []);
@@ -79,8 +95,10 @@ export const useAudio = () => {
   useEffect(() => {
     const manageAudio = async () => {
       await initAudio();
-      const context = audioContextRef.current!;
-      const gainNode = gainNodeRef.current!;
+      const context = audioContextRef.current;
+      const gainNode = gainNodeRef.current;
+
+      if (!context || !gainNode) return;
 
       if (audio.isPlaying) {
         if (context.state === 'suspended') { await context.resume(); }
