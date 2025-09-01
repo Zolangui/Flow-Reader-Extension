@@ -9,107 +9,110 @@ export const useAudio = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const filterNodeRef = useRef<BiquadFilterNode | null>(null);
-  const pannerNodeRef = useRef<StereoPannerNode | null>(null);
-  const lfoRef = useRef<OscillatorNode | null>(null);
+  const reverbNodeRef = useRef<ConvolverNode | null>(null);
+  const pannerNodeRef = useRef<PannerNode | null>(null);
+
+  const lfoXRef = useRef<OscillatorNode | null>(null);
+  const lfoZRef = useRef<OscillatorNode | null>(null);
 
   const initAudio = useCallback(async () => {
-    if (audioContextRef.current) return audioContextRef.current;
+    if (audioContextRef.current) return;
 
     const context = new (window.AudioContext || (window as any).webkitAudioContext)();
     try {
       await context.audioWorklet.addModule('/pink-noise-processor.js');
     } catch (e) {
       console.error('Error loading audio worklet module', e);
-      return null;
+      return;
     }
     audioContextRef.current = context;
 
     const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
+    const pannerNode = context.createPanner();
+    const reverbNode = context.createConvolver();
     const gainNode = context.createGain();
-    const filterNode = context.createBiquadFilter();
-    const pannerNode = context.createStereoPanner();
-    const lfo = context.createOscillator();
+
+    pannerNode.panningModel = 'HRTF';
+    pannerNode.distanceModel = 'inverse';
+    pannerNode.setPosition(3, 0, 0);
+
+    const lfoX = context.createOscillator();
+    const lfoZ = context.createOscillator();
     const lfoGain = context.createGain();
+    lfoGain.gain.value = 3;
 
-    filterNode.type = 'lowpass';
-    filterNode.frequency.value = audio.distance;
+    lfoX.type = 'sine';
+    lfoZ.type = 'sine';
+    lfoX.frequency.value = 0.15;
+    lfoZ.frequency.value = 0.15;
 
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.1;
-    lfoGain.gain.value = 0.8;
+    lfoX.connect(lfoGain).connect(pannerNode.positionX);
+    lfoZ.connect(lfoGain).connect(pannerNode.positionZ);
+    lfoX.start();
+    lfoZ.start();
 
-    noiseNode.connect(filterNode);
-    filterNode.connect(pannerNode);
-    pannerNode.connect(gainNode);
+    try {
+        const response = await fetch('/ir-hall.wav');
+        const arrayBuffer = await response.arrayBuffer();
+        reverbNode.buffer = await context.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        console.error('Error loading reverb impulse response', e);
+    }
 
-    lfo.connect(lfoGain).connect(pannerNode.pan);
-    lfo.start();
+    noiseNode.connect(pannerNode);
+    pannerNode.connect(reverbNode);
+    reverbNode.connect(gainNode);
 
     noiseNodeRef.current = noiseNode;
-    gainNodeRef.current = gainNode;
-    filterNodeRef.current = filterNode;
     pannerNodeRef.current = pannerNode;
-    lfoRef.current = lfo;
+    reverbNodeRef.current = reverbNode;
+    gainNodeRef.current = gainNode;
+    lfoXRef.current = lfoX;
+    lfoZRef.current = lfoZ;
 
-    return context;
-  }, [audio.distance]);
+  }, []);
 
   useEffect(() => {
     const manageAudio = async () => {
-      const context = await initAudio();
-      if (!context) return;
+      await initAudio();
+      const context = audioContextRef.current;
+      const gainNode = gainNodeRef.current;
 
-      const gainNode = gainNodeRef.current!;
-      const pannerNode = pannerNodeRef.current!;
+      if (!context || !gainNode) return;
 
       if (audio.isPlaying) {
         if (context.state === 'suspended') {
           await context.resume();
         }
         gainNode.connect(context.destination);
-        if (audio.is8DEnabled) {
-          lfoRef.current?.connect(pannerNode.pan);
-        } else {
-          lfoRef.current?.disconnect();
-          pannerNode.pan.value = 0; // Center the pan
-        }
       } else {
         gainNode.disconnect();
       }
     };
-
     manageAudio();
-
-    return () => {
-      gainNodeRef.current?.disconnect();
-    };
-  }, [audio.isPlaying, audio.is8DEnabled, initAudio]);
+  }, [audio.isPlaying, initAudio]);
 
   useEffect(() => {
     if (gainNodeRef.current && audioContextRef.current) {
-        gainNodeRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
+      gainNodeRef.current.gain.setValueAtTime(audio.volume, audioContextRef.current.currentTime);
     }
   }, [audio.volume]);
 
-  useEffect(() => {
-    if (filterNodeRef.current && audioContextRef.current) {
-        filterNodeRef.current.frequency.linearRampToValueAtTime(audio.distance, audioContextRef.current.currentTime + 0.1);
-    }
-  }, [audio.distance]);
-
   const toggle = async () => {
+    await initAudio();
     const context = audioContextRef.current;
     if (context && context.state === 'suspended') {
       await context.resume();
     }
-    await initAudio();
     setAudio((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
   };
 
   const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
-  const setDistance = (distance: number) => setAudio((prev) => ({...prev, distance}));
-  const toggle8D = () => setAudio((prev) => ({...prev, is8DEnabled: !prev.is8DEnabled}));
 
-  return { ...audio, toggle, setVolume, setDistance, toggle8D };
+  return {
+    isPlaying: audio.isPlaying,
+    volume: audio.volume,
+    toggle,
+    setVolume
+  };
 };
