@@ -226,7 +226,7 @@ function BookPane({ tab, onMouseDown }: BookPaneProps) {
       // `display: hidden` will lead `rect` to 0
       if (size !== 0 && prevSize.current !== 0) {
         // We only care about the main split view resize, not our own.
-        if (rendition) {
+        if (rendition?.manager) {
           rendition.resize(el.clientWidth, el.clientHeight)
         }
       }

@@ -2,60 +2,17 @@
 // It's created as a singleton to prevent multiple audio instances from being created
 // when React components re-mount.
 
-const createFlanger = (context: AudioContext) => {
-    const input = context.createGain();
-    const output = context.createGain();
-    const delay = context.createDelay(0.1);
-    const feedback = context.createGain();
-    feedback.gain.value = 0.5;
-
-    const lfo = context.createOscillator();
-    const lfoGain = context.createGain();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.05;
-    lfoGain.gain.value = 0.003;
-
-    input.connect(delay);
-    delay.connect(feedback);
-    feedback.connect(delay);
-
-    lfo.connect(lfoGain);
-    lfoGain.connect(delay.delayTime);
-    lfo.start();
-
-    input.connect(output);
-    delay.connect(output);
-
-    return { input, output, lfo, lfoGain };
-};
-
-const createProgrammaticReverb = (context: AudioContext) => {
-    const input = context.createGain();
-    const output = context.createGain();
-    const filter = context.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 3500;
-    const delay = context.createDelay(3.0);
-    const feedback = context.createGain();
-    feedback.gain.value = 0.6;
-
-    input.connect(delay);
-    delay.connect(filter);
-    filter.connect(feedback);
-    feedback.connect(delay);
-    delay.connect(output);
-
-    return { input, output, delay, filter, feedback };
-};
-
-
 class AudioService {
     private audioContext: AudioContext | null = null;
+    private isInitialized = false;
+
+    // Audio Nodes
     private noiseNode: AudioWorkletNode | null = null;
     private masterGain: GainNode | null = null;
-    private dryGain: GainNode | null = null;
-    private wetGain: GainNode | null = null;
-    private isInitialized = false;
+    private compressor: DynamicsCompressorNode | null = null;
+    private lowpassFilter: BiquadFilterNode | null = null;
+    private lowShelfFilter: BiquadFilterNode | null = null;
+    private midPeakingFilter: BiquadFilterNode | null = null;
 
     private async init() {
         if (this.isInitialized) return;
@@ -63,28 +20,34 @@ class AudioService {
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
         try {
+            // It's crucial that the path is absolute from the web root
             await this.audioContext.audioWorklet.addModule('/pink-noise-processor.js');
         } catch(e) {
             console.error("Error loading audio worklet module", e);
             return;
         }
 
-        const noiseNode = new AudioWorkletNode(this.audioContext, 'pink-noise-processor');
-        const masterGain = this.audioContext.createGain();
-        const dryGain = this.audioContext.createGain();
-        const wetGain = this.audioContext.createGain();
-        const flanger = createFlanger(this.audioContext);
-        const reverb = createProgrammaticReverb(this.audioContext);
+        // Create Nodes
+        this.noiseNode = new AudioWorkletNode(this.audioContext, 'pink-noise-processor');
+        this.compressor = this.audioContext.createDynamicsCompressor();
+        this.lowpassFilter = this.audioContext.createBiquadFilter();
+        this.lowShelfFilter = this.audioContext.createBiquadFilter();
+        this.midPeakingFilter = this.audioContext.createBiquadFilter();
+        this.masterGain = this.audioContext.createGain();
 
-        noiseNode.connect(dryGain).connect(masterGain);
-        noiseNode.connect(flanger.input);
-        flanger.output.connect(reverb.input);
-        reverb.output.connect(wetGain).connect(masterGain);
+        // Configure Nodes
+        this.lowpassFilter.type = 'lowpass';
+        this.lowShelfFilter.type = 'lowshelf';
+        this.lowShelfFilter.frequency.value = 300; // Affects frequencies below 300 Hz
+        this.midPeakingFilter.type = 'peaking';
 
-        this.noiseNode = noiseNode;
-        this.masterGain = masterGain;
-        this.dryGain = dryGain;
-        this.wetGain = wetGain;
+        // Connect the graph: Noise -> Compressor -> Low-Pass -> EQ -> Master Gain
+        this.noiseNode
+            .connect(this.compressor)
+            .connect(this.lowpassFilter)
+            .connect(this.lowShelfFilter)
+            .connect(this.midPeakingFilter)
+            .connect(this.masterGain);
 
         this.isInitialized = true;
     }
@@ -105,16 +68,41 @@ class AudioService {
         }
     }
 
+    // --- Setters for Audio Parameters ---
+
     public setVolume(volume: number) {
         if (this.masterGain && this.audioContext) {
-            this.masterGain.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.1);
+            this.masterGain.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.05);
         }
     }
 
-    public setAmbianceMix(mix: number) {
-        if (this.wetGain && this.dryGain && this.audioContext) {
-            this.wetGain.gain.linearRampToValueAtTime(mix, this.audioContext.currentTime + 0.1);
-            this.dryGain.gain.linearRampToValueAtTime(1.0 - mix, this.audioContext.currentTime + 0.1);
+    public setCompressorThreshold(value: number) {
+        if (this.compressor && this.audioContext) {
+            this.compressor.threshold.linearRampToValueAtTime(value, this.audioContext.currentTime + 0.05);
+        }
+    }
+
+    public setLowpassFreq(value: number) {
+        if (this.lowpassFilter && this.audioContext) {
+            this.lowpassFilter.frequency.linearRampToValueAtTime(value, this.audioContext.currentTime + 0.05);
+        }
+    }
+
+    public setLowShelfGain(value: number) {
+        if (this.lowShelfFilter && this.audioContext) {
+            this.lowShelfFilter.gain.linearRampToValueAtTime(value, this.audioContext.currentTime + 0.05);
+        }
+    }
+
+    public setMidBoostFreq(value: number) {
+        if (this.midPeakingFilter && this.audioContext) {
+            this.midPeakingFilter.frequency.linearRampToValueAtTime(value, this.audioContext.currentTime + 0.05);
+        }
+    }
+
+    public setMidBoostGain(value: number) {
+        if (this.midPeakingFilter && this.audioContext) {
+            this.midPeakingFilter.gain.linearRampToValueAtTime(value, this.audioContext.currentTime + 0.05);
         }
     }
 }

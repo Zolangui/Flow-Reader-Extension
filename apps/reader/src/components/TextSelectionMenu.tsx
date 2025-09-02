@@ -38,7 +38,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({
 
   // `manager` is not reactive, so we need to use getter
   const view = useCallback(() => {
-    return rendition?.manager?.views._views[0]
+    if (!rendition?.manager?.views) return
+    return rendition.manager.views._views[0]
   }, [rendition])
 
   const win = view()?.window

@@ -1,0 +1,3 @@
+
+> @flow/monorepo@ dev /app
+> turbo run dev --parallel

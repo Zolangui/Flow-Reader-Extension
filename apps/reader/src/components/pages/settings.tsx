@@ -14,6 +14,7 @@ import { dbx, mapToToken, OAUTH_SUCCESS_MESSAGE } from '@flow/reader/sync'
 import { Button } from '../Button'
 import { Select } from '../Form'
 import { Page } from '../Page'
+import { AudioView } from '../viewlets/AudioView'
 
 export const Settings: React.FC = () => {
   const { scheme, setScheme } = useColorScheme()
@@ -46,6 +47,9 @@ export const Settings: React.FC = () => {
             <option value="light">{t('color_scheme.light')}</option>
             <option value="dark">{t('color_scheme.dark')}</option>
           </Select>
+        </Item>
+        <Item title="Audio">
+          <AudioView />
         </Item>
         <Synchronization />
         <Item title={t('cache')}>
