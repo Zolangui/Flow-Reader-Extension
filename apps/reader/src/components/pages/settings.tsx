@@ -49,7 +49,7 @@ export const Settings: React.FC = () => {
           </Select>
         </Item>
         <Item title="Audio">
-          <AudioView />
+          <AudioView name="Audio" title="Audio" />
         </Item>
         <Synchronization />
         <Item title={t('cache')}>
