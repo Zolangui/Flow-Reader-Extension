@@ -74,6 +74,10 @@ export const audioState = atom({
   default: {
     isPlaying: false,
     volume: 0.5,
-    ambianceMix: 0.5, // Represents the wet/dry mix for effects
+    ambianceMix: 0.5,
+    flangerSpeed: 0.05,
+    flangerDepth: 0.003,
+    reverbTime: 3.0,
+    reverbFilter: 3500,
   },
 })

@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 
 import { audioState } from '../state';
 
-const createFlanger = (context: AudioContext) => {
+const createFlanger = (context: AudioContext, speed: number, depth: number) => {
     const input = context.createGain();
     const output = context.createGain();
     const delay = context.createDelay(0.1);
@@ -13,8 +13,8 @@ const createFlanger = (context: AudioContext) => {
     const lfo = context.createOscillator();
     const lfoGain = context.createGain();
     lfo.type = 'sine';
-    lfo.frequency.value = 0.05;
-    lfoGain.gain.value = 0.003;
+    lfo.frequency.value = speed;
+    lfoGain.gain.value = depth;
 
     input.connect(delay);
     delay.connect(feedback);
@@ -27,16 +27,16 @@ const createFlanger = (context: AudioContext) => {
     input.connect(output);
     delay.connect(output);
 
-    return { input, output };
+    return { input, output, lfo, lfoGain };
 };
 
-const createProgrammaticReverb = (context: AudioContext) => {
+const createProgrammaticReverb = (context: AudioContext, time: number, filterFreq: number) => {
     const input = context.createGain();
     const output = context.createGain();
     const filter = context.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 3500;
-    const delay = context.createDelay(3.0);
+    filter.frequency.value = filterFreq;
+    const delay = context.createDelay(time);
     const feedback = context.createGain();
     feedback.gain.value = 0.6;
 
@@ -46,7 +46,7 @@ const createProgrammaticReverb = (context: AudioContext) => {
     feedback.connect(delay);
     delay.connect(output);
 
-    return { input, output };
+    return { input, output, delay, filter, feedback };
 };
 
 export const useAudio = () => {
@@ -57,6 +57,8 @@ export const useAudio = () => {
   const masterGainRef = useRef<GainNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
+  const flangerRef = useRef<any>(null);
+  const reverbRef = useRef<any>(null);
 
   const initAudio = useCallback(async () => {
     if (audioContextRef.current) return;
@@ -75,26 +77,21 @@ export const useAudio = () => {
     const dryGain = context.createGain();
     const wetGain = context.createGain();
 
-    const flanger = createFlanger(context);
-    const reverb = createProgrammaticReverb(context);
+    const flanger = createFlanger(context, audio.flangerSpeed, audio.flangerDepth);
+    const reverb = createProgrammaticReverb(context, audio.reverbTime, audio.reverbFilter);
 
-    // Main audio chain:
-    // Noise -> Dry Path -> Master Gain
-    //       -> Wet Path (Flanger -> Reverb) -> Master Gain
-
-    noiseNode.connect(dryGain);
-    dryGain.connect(masterGain);
-
+    noiseNode.connect(dryGain).connect(masterGain);
     noiseNode.connect(flanger.input);
     flanger.output.connect(reverb.input);
-    reverb.output.connect(wetGain);
-    wetGain.connect(masterGain);
+    reverb.output.connect(wetGain).connect(masterGain);
 
     noiseNodeRef.current = noiseNode;
     masterGainRef.current = masterGain;
     dryGainRef.current = dryGain;
     wetGainRef.current = wetGain;
-  }, []);
+    flangerRef.current = flanger;
+    reverbRef.current = reverb;
+  }, [audio.flangerSpeed, audio.flangerDepth, audio.reverbTime, audio.reverbFilter]);
 
   useEffect(() => {
     const manageAudio = async () => {
@@ -114,6 +111,7 @@ export const useAudio = () => {
     manageAudio();
   }, [audio.isPlaying, initAudio]);
 
+  // Effects listeners
   useEffect(() => {
     if (masterGainRef.current && audioContextRef.current) {
         masterGainRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
@@ -122,14 +120,37 @@ export const useAudio = () => {
 
   useEffect(() => {
     if (wetGainRef.current && audioContextRef.current) {
-        // Ambiance Mix controls the volume of the "wet" signal path
         wetGainRef.current.gain.linearRampToValueAtTime(audio.ambianceMix, audioContextRef.current.currentTime + 0.1);
     }
     if (dryGainRef.current && audioContextRef.current) {
-        // The dry signal is 1.0 minus the wet signal, to maintain constant overall energy
         dryGainRef.current.gain.linearRampToValueAtTime(1.0 - audio.ambianceMix, audioContextRef.current.currentTime + 0.1);
     }
   }, [audio.ambianceMix]);
+
+  useEffect(() => {
+    if (flangerRef.current && audioContextRef.current) {
+      flangerRef.current.lfo.frequency.linearRampToValueAtTime(audio.flangerSpeed, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.flangerSpeed]);
+
+  useEffect(() => {
+    if (flangerRef.current && audioContextRef.current) {
+      flangerRef.current.lfoGain.gain.linearRampToValueAtTime(audio.flangerDepth, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.flangerDepth]);
+
+  useEffect(() => {
+    if (reverbRef.current && audioContextRef.current) {
+      reverbRef.current.delay.delayTime.linearRampToValueAtTime(audio.reverbTime, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.reverbTime]);
+
+  useEffect(() => {
+    if (reverbRef.current && audioContextRef.current) {
+      reverbRef.current.filter.frequency.linearRampToValueAtTime(audio.reverbFilter, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.reverbFilter]);
+
 
   const toggle = async () => {
     await initAudio();
@@ -140,6 +161,10 @@ export const useAudio = () => {
 
   const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
   const setAmbianceMix = (mix: number) => setAudio((prev) => ({ ...prev, ambianceMix: mix }));
+  const setFlangerSpeed = (speed: number) => setAudio((prev) => ({ ...prev, flangerSpeed: speed }));
+  const setFlangerDepth = (depth: number) => setAudio((prev) => ({ ...prev, flangerDepth: depth }));
+  const setReverbTime = (time: number) => setAudio((prev) => ({ ...prev, reverbTime: time }));
+  const setReverbFilter = (freq: number) => setAudio((prev) => ({ ...prev, reverbFilter: freq }));
 
-  return { ...audio, toggle, setVolume, setAmbianceMix };
+  return { ...audio, toggle, setVolume, setAmbianceMix, setFlangerSpeed, setFlangerDepth, setReverbTime, setReverbFilter };
 };
