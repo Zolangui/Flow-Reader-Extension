@@ -3,90 +3,22 @@ import { useRecoilState } from 'recoil';
 
 import { audioState } from '../state';
 
-// Creates a stereo flanger effect for a "watery" and immersive movement
-const createStereoFlanger = (context: AudioContext) => {
-    const input = context.createGain();
-    const splitter = context.createChannelSplitter(2);
-    const merger = context.createChannelMerger(2);
-    const output = context.createGain();
-
-    const lfo = context.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.08; // Slow, hypnotic movement
-
-    // Create a flanger for each channel (left and right) with slightly different parameters
-    for (let i = 0; i < 2; i++) {
-        const delay = context.createDelay(0.1);
-        const feedback = context.createGain();
-        const lfoGain = context.createGain();
-
-        feedback.gain.value = 0.6;
-        lfoGain.gain.value = i === 0 ? 0.003 : 0.0045; // Slightly different depth for stereo effect
-
-        splitter.connect(delay, i);
-        delay.connect(feedback);
-        feedback.connect(delay);
-        lfo.connect(lfoGain);
-        lfoGain.connect(delay.delayTime);
-
-        input.connect(delay, 0, i);
-        delay.connect(merger, 0, i);
-    }
-
-    input.connect(output); // Mix in some of the original sound
-    merger.connect(output);
-    lfo.start();
-
-    return { input, output };
-};
-
-// Creates a "Supermassive" reverb with multiple delay lines and diffusion
-const createMassiveReverb = (context: AudioContext) => {
-    const input = context.createGain();
-    const output = context.createGain();
-    const wetGain = context.createGain();
-    wetGain.gain.value = 0.8;
-
-    // Use 4 parallel delay lines for a dense sound
-    const delayTimes = [0.41, 0.53, 0.67, 0.79]; // Prime numbers avoid resonance
-    delayTimes.forEach(time => {
-        const delay = context.createDelay(time * 2); // Long delay times
-        const feedback = context.createGain();
-        feedback.gain.value = 0.7;
-        const filter = context.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 2000;
-
-        // Diffusion with Allpass Filter to smooth out echoes
-        const allpass = context.createBiquadFilter();
-        allpass.type = 'allpass';
-        allpass.frequency.value = 1500;
-
-        input.connect(delay);
-        delay.connect(allpass);
-        allpass.connect(filter);
-        filter.connect(feedback);
-        feedback.connect(delay);
-        delay.connect(wetGain);
-    });
-
-    input.connect(output); // Dry sound
-    wetGain.connect(output); // Wet sound with reverb
-
-    return { input, output };
-};
-
-
 export const useAudio = () => {
   const [audio, setAudio] = useRecoilState(audioState);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
+  const noiseNodeRef = useRef<AudioWorkletNode | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const lowpassFilterRef = useRef<BiquadFilterNode | null>(null);
+  const midBoostFilterRef = useRef<BiquadFilterNode | null>(null);
+  const lowShelfFilterRef = useRef<BiquadFilterNode | null>(null);
 
   const initAudio = useCallback(async () => {
-    if (audioContextRef.current) return audioContextRef.current;
+    if (audioContextRef.current) return;
+
     const context = new (window.AudioContext || (window as any).webkitAudioContext)();
     try {
-      await context.audioWorklet.addModule('/pink-noise-processor.js');
+        await context.audioWorklet.addModule('/pink-noise-processor.js');
     } catch(e) {
         console.error("Error loading audio worklet module", e);
         return;
@@ -94,46 +26,98 @@ export const useAudio = () => {
     audioContextRef.current = context;
 
     const noiseNode = new AudioWorkletNode(context, 'pink-noise-processor');
-    const gainNode = context.createGain(); // Final Master Volume
+    const compressor = context.createDynamicsCompressor();
     const lowpassFilter = context.createBiquadFilter();
-    const flanger = createStereoFlanger(context);
-    const reverb = createMassiveReverb(context);
+    const midBoostFilter = context.createBiquadFilter();
+    const lowShelfFilter = context.createBiquadFilter();
+    const masterGain = context.createGain();
 
-    // Initial "submerged" filter settings
+    // Configure Compressor
+    compressor.threshold.value = audio.compressorThreshold;
+    compressor.knee.value = 10;
+    compressor.ratio.value = 12;
+    compressor.attack.value = 0;
+    compressor.release.value = 0.25;
+
+    // Configure EQ Filters
     lowpassFilter.type = 'lowpass';
-    lowpassFilter.frequency.value = 1000;
-    lowpassFilter.Q.value = 1.5;
+    lowpassFilter.frequency.value = audio.lowpassFreq;
 
-    // The Final Effects Chain
-    noiseNode.connect(lowpassFilter);
-    lowpassFilter.connect(flanger.input);
-    flanger.output.connect(reverb.input);
-    reverb.output.connect(gainNode);
+    midBoostFilter.type = 'peaking';
+    midBoostFilter.frequency.value = audio.midBoostFreq;
+    midBoostFilter.gain.value = audio.midBoostGain;
+    midBoostFilter.Q.value = 1.5;
 
-    gainNodeRef.current = gainNode;
-    return context;
-  }, []);
+    lowShelfFilter.type = 'lowshelf';
+    lowShelfFilter.frequency.value = 300; // Affects frequencies below 300 Hz
+    lowShelfFilter.gain.value = audio.lowShelfGain;
+
+    // Audio Chain: Noise -> Compressor -> Low-Pass -> Mid-Boost -> Low-Shelf -> Master Gain -> Output
+    noiseNode.connect(compressor);
+    compressor.connect(lowpassFilter);
+    lowpassFilter.connect(midBoostFilter);
+    midBoostFilter.connect(lowShelfFilter);
+    lowShelfFilter.connect(masterGain);
+
+    // Store refs
+    noiseNodeRef.current = noiseNode;
+    compressorRef.current = compressor;
+    lowpassFilterRef.current = lowpassFilter;
+    midBoostFilterRef.current = midBoostFilter;
+    lowShelfFilterRef.current = lowShelfFilter;
+    masterGainRef.current = masterGain;
+
+  }, [audio]); // Depend on the whole audio object for initial setup
 
   useEffect(() => {
     const manageAudio = async () => {
-        await initAudio();
-        const context = audioContextRef.current!;
-        const gainNode = gainNodeRef.current!;
-        if (audio.isPlaying) {
-            if (context.state === 'suspended') { await context.resume(); }
-            gainNode.connect(context.destination);
-        } else {
-            gainNode.disconnect();
-        }
+      await initAudio();
+      const context = audioContextRef.current;
+      const masterGain = masterGainRef.current;
+      if (!context || !masterGain) return;
+
+      if (audio.isPlaying) {
+        if (context.state === 'suspended') { await context.resume(); }
+        masterGain.connect(context.destination);
+      } else {
+        masterGain.disconnect();
+      }
     };
     manageAudio();
   }, [audio.isPlaying, initAudio]);
 
+  // Effects listeners for real-time control
   useEffect(() => {
-    if (gainNodeRef.current && audioContextRef.current) {
-        gainNodeRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
+    if (masterGainRef.current && audioContextRef.current) {
+        masterGainRef.current.gain.linearRampToValueAtTime(audio.volume, audioContextRef.current.currentTime + 0.1);
     }
   }, [audio.volume]);
+
+  useEffect(() => {
+    if (compressorRef.current && audioContextRef.current) {
+      compressorRef.current.threshold.linearRampToValueAtTime(audio.compressorThreshold, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.compressorThreshold]);
+
+  useEffect(() => {
+    if (lowpassFilterRef.current && audioContextRef.current) {
+      lowpassFilterRef.current.frequency.linearRampToValueAtTime(audio.lowpassFreq, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.lowpassFreq]);
+
+  useEffect(() => {
+    if (midBoostFilterRef.current && audioContextRef.current) {
+      midBoostFilterRef.current.frequency.linearRampToValueAtTime(audio.midBoostFreq, audioContextRef.current.currentTime + 0.1);
+      midBoostFilterRef.current.gain.linearRampToValueAtTime(audio.midBoostGain, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.midBoostFreq, audio.midBoostGain]);
+
+  useEffect(() => {
+    if (lowShelfFilterRef.current && audioContextRef.current) {
+      lowShelfFilterRef.current.gain.linearRampToValueAtTime(audio.lowShelfGain, audioContextRef.current.currentTime + 0.1);
+    }
+  }, [audio.lowShelfGain]);
+
 
   const toggle = async () => {
     await initAudio();
@@ -142,7 +126,21 @@ export const useAudio = () => {
     setAudio((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
   };
 
-  const setVolume = (volume: number) => setAudio((prev) => ({ ...prev, volume }));
+  const setVolume = (v: number) => setAudio((prev) => ({ ...prev, volume: v }));
+  const setCompressorThreshold = (v: number) => setAudio((prev) => ({ ...prev, compressorThreshold: v }));
+  const setLowpassFreq = (v: number) => setAudio((prev) => ({...prev, lowpassFreq: v}));
+  const setMidBoostFreq = (v: number) => setAudio((prev) => ({...prev, midBoostFreq: v}));
+  const setMidBoostGain = (v: number) => setAudio((prev) => ({...prev, midBoostGain: v}));
+  const setLowShelfGain = (v: number) => setAudio((prev) => ({...prev, lowShelfGain: v}));
 
-  return { ...audio, toggle, setVolume };
+  return {
+      ...audio,
+      toggle,
+      setVolume,
+      setCompressorThreshold,
+      setLowpassFreq,
+      setMidBoostFreq,
+      setMidBoostGain,
+      setLowShelfGain,
+    };
 };
