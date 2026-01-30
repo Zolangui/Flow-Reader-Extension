@@ -8,6 +8,8 @@ import {
   MdOutlineEdit,
   MdOutlineIndeterminateCheckBox,
   MdSearch,
+  MdAutoAwesome,
+  MdAutoStories,
 } from 'react-icons/md'
 import { useSnapshot } from 'valtio'
 
@@ -19,9 +21,11 @@ import {
   useTextSelection,
   useTranslation,
   useTypography,
+  useChatbot,
 } from '../hooks'
 import { BookTab } from '../models'
 import { isTouchScreen, scale } from '../platform'
+import { useAISettings } from '../state'
 import { copy, keys, last } from '../utils'
 
 import { Button, IconButton } from './Button'
@@ -58,8 +62,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({
   const forward = isTouchScreen
     ? false
     : selection
-    ? isForwardSelection(selection)
-    : true
+      ? isForwardSelection(selection)
+      : true
 
   const rects = [...range.getClientRects()].filter((r) => Math.round(r.width))
   const anchorRect = rects && (forward ? last(rects) : rects[0])
@@ -119,11 +123,14 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
   hide,
 }) => {
   const setAction = useSetAction()
+  const [settings] = useAISettings()
+  const { sendMessage } = useChatbot()
   const ref = useRef<HTMLInputElement>(null)
   const [width, setWidth] = useState(0)
   const [height, setHeight] = useState(0)
   const mobile = useMobile()
   const t = useTranslation('menu')
+  const tAI = useTranslation('ai')
 
   const cfi = tab.rangeToCfi(range)
   const annotation = tab.book.annotations.find((a) => a.cfi === cfi)
@@ -196,7 +203,7 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
             />
           </div>
         ) : (
-          <div className="text-on-surface-variant -mx- mb-3 flex gap-1">
+          <div className="text-on-surface-variant -mx- mb-3 flex flex-wrap gap-1">
             <IconButton
               title={t('copy')}
               Icon={MdCopyAll}
@@ -242,6 +249,34 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
                 onClick={() => {
                   hide()
                   tab.define([text])
+                }}
+              />
+            )}
+
+            {/* AI ACTIONS - Integrated v3.11 */}
+            {/* AI ACTIONS - Integrated v3.11 */}
+            {settings.explainSelection && (
+              <IconButton
+                title={tAI('selection.explain_tooltip')}
+                Icon={MdAutoAwesome}
+                size={ICON_SIZE}
+                className="text-primary hover:scale-110 active:scale-95 transition-all !p-1 bg-primary/5 rounded-lg border border-primary/20 shadow-sm shadow-primary/10"
+                onClick={() => {
+                  hide()
+                  sendMessage(text, undefined, { action: 'explain' })
+                }}
+              />
+            )}
+
+            {settings.summarizeSelection && (
+              <IconButton
+                title={tAI('selection.summarize_tooltip')}
+                Icon={MdAutoStories}
+                size={ICON_SIZE}
+                className="text-primary hover:scale-110 active:scale-95 transition-all !p-1 bg-primary/5 rounded-lg border border-primary/20 shadow-sm shadow-primary/10"
+                onClick={() => {
+                  hide()
+                  sendMessage(text, undefined, { action: 'summarize' })
                 }}
               />
             )}

@@ -64,6 +64,13 @@ export const NewSidebar: React.FC<NewSidebarProps> = ({ className }) => {
           active={action === 'theme'}
           onClick={() => setAction(action === 'theme' ? undefined : 'theme')}
         />
+        <NavItem
+          icon="smart_toy"
+          active={action === 'chatbot'}
+          onClick={() =>
+            setAction(action === 'chatbot' ? undefined : 'chatbot')
+          }
+        />
       </nav>
       <div className="flex flex-col items-center">
         <button className="text-subtle-light dark:text-subtle-dark flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5">

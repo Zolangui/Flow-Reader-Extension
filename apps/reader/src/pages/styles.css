@@ -12,6 +12,8 @@ body,
   height: 100%;
 }
 
+
+
 .checkbox,
 .textfield,
 select {
@@ -125,4 +127,11 @@ p {
 
 .list-row:hover .action {
   display: block;
+}
+
+/* SOTA 2026: CSS Custom Highlight API */
+/* Zero-DOM pollution highlighting for search results */
+::highlight(search-results) {
+  background-color: #fde047; /* yellow-300 */
+  color: black;
 }

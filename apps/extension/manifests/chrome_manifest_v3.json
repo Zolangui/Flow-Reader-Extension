@@ -15,8 +15,13 @@
     },
     "default_title": "Lumen Read"
   },
-  "permissions": ["storage", "windows"],
-  "host_permissions": ["*://*.dropboxapi.com/*"],
+  "permissions": [
+    "storage",
+    "windows"
+  ],
+  "host_permissions": [
+    "*://*.dropboxapi.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

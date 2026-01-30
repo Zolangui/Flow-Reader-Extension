@@ -37,6 +37,8 @@ export interface BookRecord {
   }
   favorite?: boolean
   position?: number
+  aiPersona?: string
+  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string; id: string }>
 }
 
 export class DB extends Dexie {
@@ -45,14 +47,58 @@ export class DB extends Dexie {
   files!: Table<FileRecord>
   covers!: Table<CoverRecord>
   books!: Table<BookRecord>
+  vectors!: Table<VectorRecord>
+  indices!: Table<{ bookId: string; kind: 'chunks' | 'chapters'; data: string; dim?: number; model?: string; version?: number }>
 
   constructor(name: string) {
     super(name)
 
+    this.version(13).stores({
+      books:
+        'id, name, size, metadata, createdAt, updatedAt, cfi, percentage, pageCount, pageCountEstimated, locations, definitions, annotations, configuration, favorite, position',
+      files: 'id',
+      covers: 'id',
+      vectors: 'id, bookId, [bookId+index]',
+      indices: '[bookId+kind], bookId', // support multiple indices (chunks, chapters) per book
+    })
+
+    // Intermediate version to drop the old 'indices' table (allows changing PK)
+    this.version(12).stores({
+      indices: null
+    })
+
+    this.version(11).stores({
+      books:
+        'id, name, size, metadata, createdAt, updatedAt, cfi, percentage, pageCount, pageCountEstimated, locations, definitions, annotations, configuration, favorite, position',
+      files: 'id',
+      covers: 'id',
+      vectors: 'id, bookId, [bookId+index]',
+      indices: 'bookId', // Store serialized Voyager index (Uint8Array)
+    })
+
+    this.version(10).stores({
+      books:
+        'id, name, size, metadata, createdAt, updatedAt, cfi, percentage, pageCount, pageCountEstimated, locations, definitions, annotations, configuration, favorite, position',
+      files: 'id',
+      covers: 'id',
+      vectors: 'id, bookId, [bookId+index]',
+      indices: 'bookId', // Store serialized Voyager index (Uint8Array)
+    })
+
+    // Kept for reference/history - this version was flawed (missing books)
+    this.version(9).stores({
+      vectors: 'id, bookId, [bookId+index]',
+      files: 'id',
+      covers: 'id',
+    })
+
     this.version(8).stores({
       books:
         'id, name, size, metadata, createdAt, updatedAt, cfi, percentage, pageCount, pageCountEstimated, locations, definitions, annotations, configuration, favorite, position',
+      files: 'id',
+      covers: 'id',
     })
+
 
     this.version(7).stores({
       books:
@@ -118,21 +164,31 @@ export class DB extends Dexie {
       })
       .upgrade(async (t) => {
         const books = await t.table('books').toArray()
-        ;['covers', 'files'].forEach((tableName) => {
-          t.table(tableName)
-            .toCollection()
-            .modify((r) => {
-              const book = books.find((b) => b.name === r.id)
-              if (book) r.id = book.id
-            })
-        })
+          ;['covers', 'files'].forEach((tableName) => {
+            t.table(tableName)
+              .toCollection()
+              .modify((r) => {
+                const book = books.find((b) => b.name === r.id)
+                if (book) r.id = book.id
+              })
+          })
       })
+
     this.version(1).stores({
       books: 'id, name, createdAt, cfi, percentage, definitions', // Primary key and indexed props
       covers: 'id, cover',
       files: 'id, file',
     })
   }
+}
+
+export interface VectorRecord {
+  id: string // uuid
+  bookId: string
+  content: string
+  embedding?: number[] | Float32Array
+  index: number // chunk index
+  metadata?: any
 }
 
 const isExport = process.env.NEXT_PUBLIC_IS_EXPORT === 'true'

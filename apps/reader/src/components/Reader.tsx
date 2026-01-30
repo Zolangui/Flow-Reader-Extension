@@ -32,12 +32,23 @@ import {
   Annotations,
 } from './Annotation'
 import { NewReaderLayout } from './NewReaderLayout'
+import { SearchHighlightLayer } from './SearchHighlightLayer'
 import { TextSelectionMenu } from './TextSelectionMenu'
 import { DropZone, SplitView, useDndContext, useSplitViewItem } from './base'
 import * as pages from './pages'
 
 function handleKeyDown(tab?: BookTab) {
   return (e: KeyboardEvent) => {
+    // Ignore keyboard shortcuts if an input or editable element is focused
+    const target = e.target as HTMLElement
+    if (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    ) {
+      return
+    }
+
     try {
       switch (e.code) {
         case 'ArrowLeft':
@@ -161,6 +172,7 @@ function ReaderGroup({ index }: ReaderGroupProps) {
 
 interface PaneContainerProps {
   active: boolean
+  children?: React.ReactNode
 }
 const PaneContainer: React.FC<PaneContainerProps> = ({ active, children }) => {
   return (
@@ -192,6 +204,22 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   const { iframe, rendition, rendered, container, book } = useSnapshot(tab)
 
   useTilg()
+
+  // v3.12: Semantic Jump Highlight Support
+  useEffect(() => {
+    const handle = (e: any) => {
+      const { cfi } = e.detail
+      if (active && tab.rendition) {
+        // Apply Cyan Glow highlight to referenced text
+        tab.rendition.annotations.add('highlight', cfi, {}, undefined, 'glow-highlight')
+        setTimeout(() => {
+          tab.rendition?.annotations.remove(cfi, 'highlight')
+        }, 5000)
+      }
+    }
+    window.addEventListener('reader-highlight-chunk', handle)
+    return () => window.removeEventListener('reader-highlight-chunk', handle)
+  }, [active, tab.rendition])
 
   // Function to center content by applying dynamic padding to iframe body
   const centerContent = useCallback(() => {
@@ -641,6 +669,7 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
             />
             <TextSelectionMenu tab={tab} />
             <Annotations tab={tab} />
+            <SearchHighlightLayer tab={tab} />
           </div>
         </div>
       </div>

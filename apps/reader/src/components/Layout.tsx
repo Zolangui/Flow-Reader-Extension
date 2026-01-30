@@ -12,6 +12,7 @@ import {
   MdTextFields,
   MdSelfImprovement,
   MdLibraryBooks,
+  MdSmartToy,
 } from 'react-icons/md'
 import { RiHome6Line, RiSettings5Line } from 'react-icons/ri'
 import { useRecoilState } from 'recoil'
@@ -31,6 +32,7 @@ import { reader, useReaderSnapshot } from '../models'
 import { navbarState, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
+import { ChatbotSidebar } from './ChatbotSidebar'
 import { SplitView, useSplitViewItem } from './base'
 import { Settings } from './pages'
 import { AnnotationView } from './viewlets/AnnotationView'
@@ -42,7 +44,7 @@ import { TimelineView } from './viewlets/TimelineView'
 import { TocView } from './viewlets/TocView'
 import { TypographyView } from './viewlets/TypographyView'
 
-export const Layout: React.FC = ({ children }) => {
+export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   useColorScheme()
   useZenModeHandler()
   const [isZenMode] = useZenMode()
@@ -134,6 +136,13 @@ const viewActions: IViewAction[] = [
     title: 'theme',
     Icon: MdPalette,
     View: ThemeView,
+    env: Env.Desktop | Env.Mobile,
+  },
+  {
+    name: 'chatbot',
+    title: 'chatbot',
+    Icon: MdSmartToy,
+    View: ChatbotSidebar,
     env: Env.Desktop | Env.Mobile,
   },
 ]
@@ -265,7 +274,7 @@ function NavigationBar() {
   )
 }
 
-interface ActionBarProps extends ComponentProps<'ul'> {}
+interface ActionBarProps extends ComponentProps<'ul'> { }
 function ActionBar({ className, ...props }: ActionBarProps) {
   return (
     <ul className={clsx('ActionBar flex sm:flex-col', className)} {...props} />
@@ -355,7 +364,7 @@ const SideBar: React.FC = () => {
   )
 }
 
-interface ReaderProps extends ComponentProps<'div'> {}
+interface ReaderProps extends ComponentProps<'div'> { }
 const Reader: React.FC<ReaderProps> = ({
   className,
   ...props

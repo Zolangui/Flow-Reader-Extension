@@ -9,6 +9,7 @@ export type Action =
   | 'timeline'
   | 'theme'
   | 'books'
+  | 'chatbot'
 
 export const actionState = atom<Action | undefined>({
   key: 'action',

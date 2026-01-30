@@ -27,6 +27,7 @@
     "@typescript-eslint/eslint-plugin": "5.19.0",
     "bestzip": "2.2.1",
     "cross-env": "7.0.3",
+    "esbuild-loader": "4.4.2",
     "eslint": "8.13.0",
     "eslint-config-next": "12.1.5",
     "eslint-config-prettier": "8.5.0",
@@ -44,7 +45,13 @@
     "sharp": "0.34.5",
     "tsup": "5.12.7",
     "turbo": "1.11.3",
-    "typescript": "4.6.3"
+    "typescript": "^5.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "sharp": "0.34.5",
+      "zod": "4.3.6"
+    }
   },
   "engines": {
     "node": ">=18.0.0"

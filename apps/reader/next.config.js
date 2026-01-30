@@ -16,6 +16,7 @@ const withTM = require('next-transpile-modules')([
   '@flow/internal',
   '@flow/epubjs',
   '@material/material-color-utilities',
+  'voy-search',
 ])
 
 const IS_DEV = process.env.NODE_ENV === 'development'
@@ -40,7 +41,7 @@ const sentryWebpackPluginOptions = {
  * @type {import('next').NextConfig}
  **/
 let config = {
-  swcMinify: process.env.FAST_BUILD !== 'true', // Disable minification for fast builds
+  swcMinify: false, // Use Terser instead of SWC (Fixes Zod v4 mangling bug in Next.js 12)
   compress: process.env.FAST_BUILD !== 'true', // Disable gzip for fast builds
   productionBrowserSourceMaps: false, // Disable for faster builds
   typescript: {
@@ -50,10 +51,29 @@ let config = {
     ignoreDuringBuilds: process.env.FAST_BUILD === 'true', // Skip linting ONLY in fast build
   },
   pageExtensions: ['ts', 'tsx'],
-  webpack(config) {
+  webpack(config, { dev, isServer }) {
     if (process.env.FAST_BUILD === 'true') {
       config.optimization.minimize = false
     }
+
+    // SOTA 2026: Use Esbuild for minification to fix Zod v4 mangling in Next.js 12
+    if (!dev && !isServer) {
+      const { EsbuildPlugin } = require('esbuild-loader')
+      config.optimization.minimizer = [
+        new EsbuildPlugin({
+          target: 'esnext',
+          keepNames: true, // Prevent Zod/Valtio property mangling
+          css: true, // SOTA: Minify CSS with Esbuild
+        }),
+      ]
+    }
+
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+      layers: true,
+    }
+
     return config
   },
   ...(IS_DOCKER && {
@@ -84,11 +104,11 @@ const docker = base
 const shouldEnableSentry = !process.env.SKIP_SENTRY
 const prod = shouldEnableSentry
   ? withSentryConfig(
-      base,
-      // Make sure adding Sentry options is the last code to run before exporting, to
-      // ensure that your source maps include changes from all other Webpack plugins
-      sentryWebpackPluginOptions,
-    )
+    base,
+    // Make sure adding Sentry options is the last code to run before exporting, to
+    // ensure that your source maps include changes from all other Webpack plugins
+    sentryWebpackPluginOptions,
+  )
   : base
 
 module.exports = IS_DEV ? dev : IS_DOCKER ? docker : prod

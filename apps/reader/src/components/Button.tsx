@@ -24,6 +24,7 @@ export function IconButton({
 const variantMap = {
   primary: 'bg-primary-container text-on-primary-container',
   secondary: 'bg-outline/10 text-on-surface-variant',
+  ghost: 'bg-transparent text-subtle hover:bg-surface-3 hover:text-text',
 }
 
 export interface ButtonProps extends ComponentProps<'button'> {

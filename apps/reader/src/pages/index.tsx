@@ -76,7 +76,7 @@ export default function Index() {
           name="viewport"
           content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"
         />
-        <title>{focusedTab?.title ?? 'Flow'}</title>
+        <title>{focusedTab?.title ?? 'Lumen Read'}</title>
       </Head>
       <ReaderGridView />
       {loading || <Library />}

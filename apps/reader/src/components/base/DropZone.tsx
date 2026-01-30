@@ -12,6 +12,7 @@ interface DropZoneProps {
   className?: string
   onDrop?: (e: DragEvent<HTMLDivElement>, position?: Position) => void
   split?: boolean
+  children?: React.ReactNode
 }
 export const DropZone: React.FC<DropZoneProps> = (props) => {
   return (
@@ -125,8 +126,8 @@ const DropZoneInner: React.FC<DropZoneProps> = ({
 const DndContext = createContext<{
   dragover: boolean
   setDragEvent: (e?: DragEvent) => void
-}>({ dragover: false, setDragEvent: () => {} })
-const DndProvider: React.FC = ({ children }) => {
+}>({ dragover: false, setDragEvent: () => { } })
+const DndProvider: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [dragover, setDragover] = useState(false)
 
   const setDragEvent = useCallback((e?: DragEvent) => {

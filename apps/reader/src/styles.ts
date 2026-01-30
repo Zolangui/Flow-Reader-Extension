@@ -28,6 +28,11 @@ export const defaultStyle = {
   '::selection': {
     'background-color': 'rgba(3, 102, 214, 0.2)',
   },
+  '.glow-highlight': {
+    'background-color': 'rgba(6, 182, 212, 0.4) !important',
+    'border-radius': '2px',
+    'box-shadow': '0 0 8px rgba(6, 182, 212, 0.6)',
+  },
 }
 
 const camelToSnake = (str: string) =>
@@ -62,17 +67,17 @@ export function updateCustomStyle(
     })
     css += `body {
       ${mapToCss({
-        transformOrigin: 'top left',
-        transform: `scale(${zoom})`,
-        ...scale('width'),
-        ...scale('height'),
-        ...scale('columnWidth'),
-        ...scale('columnGap'),
-        ...scale('paddingTop'),
-        ...scale('paddingBottom'),
-        ...scale('paddingLeft'),
-        ...scale('paddingRight'),
-      })}
+      transformOrigin: 'top left',
+      transform: `scale(${zoom})`,
+      ...scale('width'),
+      ...scale('height'),
+      ...scale('columnWidth'),
+      ...scale('columnGap'),
+      ...scale('paddingTop'),
+      ...scale('paddingBottom'),
+      ...scale('paddingLeft'),
+      ...scale('paddingRight'),
+    })}
     }`
   }
 

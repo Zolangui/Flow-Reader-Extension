@@ -17,6 +17,8 @@ dist
 # misc
 .DS_Store
 *.pem
+.agent
+plans/
 
 # debug
 npm-debug.log*
