@@ -4,6 +4,42 @@ import { MdClose, MdMenuBook } from 'react-icons/md'
 
 import { BookRecord } from '../db'
 import { useTranslation } from '../hooks'
+import { useSettings } from '../state'
+
+// Security: Install DOMPurify hook once for safe link handling
+let domPurifyHooksInstalled = false
+function installDomPurifyHooksOnce() {
+  if (domPurifyHooksInstalled) return
+  domPurifyHooksInstalled = true
+
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      const href = node.getAttribute('href') || ''
+      const target = node.getAttribute('target') || ''
+
+      // Block dangerous schemes (javascript:, data:, etc.)
+      const isSafe =
+        href.startsWith('#') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('http://') ||
+        href.startsWith('https://')
+
+      if (href && !isSafe) {
+        node.removeAttribute('href')
+      }
+
+      // Ensure noopener noreferrer for _blank links
+      if (target === '_blank') {
+        const rel = (node.getAttribute('rel') || '')
+          .split(/\s+/)
+          .filter(Boolean)
+        if (!rel.includes('noopener')) rel.push('noopener')
+        if (!rel.includes('noreferrer')) rel.push('noreferrer')
+        node.setAttribute('rel', rel.join(' '))
+      }
+    }
+  })
+}
 
 interface BookDetailsModalProps {
   book: BookRecord
@@ -20,6 +56,11 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
 }) => {
   const modalRef = useRef<HTMLDivElement>(null)
   const t = useTranslation()
+  const [appSettings] = useSettings()
+  const appLocale = appSettings.locale || 'en'
+
+  // Install DOMPurify hooks on first render
+  installDomPurifyHooksOnce()
 
   // Close on click outside
   // Close on click outside removed - relying on backdrop click
@@ -154,7 +195,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                       {t('details.pub_date')}
                     </span>
                     <span className="text-text-light dark:text-text-dark font-medium">
-                      {new Date(date).toLocaleDateString()}
+                      {new Date(date).toLocaleDateString(appLocale)}
                     </span>
                   </div>
                 )}
@@ -219,7 +260,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                     </span>
                     <span className="text-text-light dark:text-text-dark font-medium">
                       {book.updatedAt
-                        ? new Date(book.updatedAt).toLocaleDateString()
+                        ? new Date(book.updatedAt).toLocaleDateString(appLocale)
                         : t('details.never')}
                     </span>
                   </div>
