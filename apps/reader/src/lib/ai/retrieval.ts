@@ -384,71 +384,8 @@ export function deduplicateChunks(
 }
 
 /**
- * Builds an optimized prompt with context
- * Places question before context for better model attention
- * 
- * @param query - User's question
- * @param context - Retrieved context text
- * @param language - Language for instructions ('en' or 'pt')
- * @returns Formatted user prompt
- */
-export function buildOptimizedPrompt(
-    query: string,
-    context: string,
-    language = 'en'
-): string {
-    // v4.0: Unified English template with language directive
-    const langName = displayLangName(language)
-    const instructions = `Instructions:
-- Answer ONLY based on the excerpts above.
-- Quote relevant passages when helpful.
-- Use "USER'S NOTES" to personalize the answer if applicable.
-- If the answer is not found in the context, say so clearly.
-- Be concise and direct.
-- Language: Answer in ${langName} (${language}).`
-
-    // Single English fallback (model will translate/understand based on language directive)
-    const noContextMessage = `[No context found. The book may not be indexed. Please go to Settings > Advanced and click "Re-index Book".]`
-
-    const effectiveContext = context.trim() || noContextMessage
-
-    // SOTA: Question-first format for better model attention
-    return `Question: ${query}
-
-Relevant excerpts from the book:
----
-${effectiveContext}
----
-
-${instructions}`
-}
-
-/**
- * Detects query language (Portuguese, English, Japanese, Chinese) based on heuristics
- */
-export function detectQueryLanguage(text: string): 'pt' | 'en' | 'ja' | 'zh' {
-    const t = (text || '').trim().toLowerCase()
-    if (!t) return 'en'
-
-    // Strong Global signals: Unicode script ranges
-    const isJapanese = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/u.test(t)
-    const isChinese = /[\u4e00-\u9fa5]/u.test(t) && !isJapanese // Narrow Chinese vs Japanese
-
-    if (isJapanese) return 'ja'
-    if (isChinese) return 'zh'
-
-    // Strong PT signals: accents and common stopwords
-    const hasAccent = /[áàâãéêíóôõúç]/i.test(t)
-    const ptHits = (t.match(/\b(o|a|os|as|de|do|da|dos|das|em|no|na|nos|nas|para|por|com|sem|sobre|entre|que|como|quando|onde|porque|porquê|qual|quais|quem|isso|essa|este|esta)\b/g) || []).length
-    const enHits = (t.match(/\b(the|a|an|of|to|in|on|for|with|without|between|what|why|how|when|where|which|who|this|that)\b/g) || []).length
-
-    if (hasAccent) return 'pt'
-    if (ptHits >= enHits + 2) return 'pt'
-    return 'en'
-}
-
-/**
  * Builds a no-context message in the correct language.
+
  * SOTA: Uses unified English template - AI model translates based on conversation context.
  * Works for ALL languages automatically, not just PT/EN/JA/ZH.
  */

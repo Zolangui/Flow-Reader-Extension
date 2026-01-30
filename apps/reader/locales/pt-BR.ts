@@ -238,6 +238,14 @@ export default {
     // AI No-Context Messages
     'ai.no_context.can_search_deeper': 'Não encontrei uma resposta direta nos trechos atuais. Gostaria que eu buscasse mais fundo em outros capítulos?',
     'ai.no_context.final': 'Não encontrei uma resposta direta no livro para essa pergunta.',
+    'ai.no_context.index_required': '[Contexto não encontrado. O livro pode não estar indexado. Vá em Configurações > Avançado e clique em "Re-indexar Livro".]',
+
+    // AI Error Messages
+    'ai.error.circuit_breaker': 'Limite de requisições excedido. Por favor, aguarde {seconds} segundos.',
+    'ai.error.rate_limit': 'Limite de requisições atingido ({reason}). Por favor, diminua a velocidade.',
+    'ai.error.unsupported_provider': 'Provedor não suportado.',
+    'ai.error.api_key_missing': 'Chave da API não configurada.',
+    'ai.error.generation_failed': 'Falha ao gerar resposta do provedor de IA.',
     // AI Selection Menu
     'ai.selection.explain': 'Explicar',
     'ai.selection.explain_tooltip': 'Explicar (2-3 frases)',

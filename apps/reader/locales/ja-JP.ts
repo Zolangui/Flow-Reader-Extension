@@ -242,6 +242,14 @@ export default {
   // AI No-Context Messages
   'ai.no_context.can_search_deeper': '現在の抜粋から直接的な回答が見つかりませんでした。他の章をもっと深く検索しましょうか？',
   'ai.no_context.final': 'この質問に対する直接的な回答が本の中に見つかりませんでした。',
+  'ai.no_context.index_required': '[コンテキストが見つかりませんでした。本がインデックスされていない可能性があります。設定 > 詳細に移動して「本の再インデックス」をクリックしてください。]',
+
+  // AI Error Messages
+  'ai.error.circuit_breaker': 'クォータを超えました。{seconds}秒お待ちください。',
+  'ai.error.rate_limit': 'レート制限を超えました（{reason}）。速度を落としてください。',
+  'ai.error.unsupported_provider': 'サポートされていないプロバイダーです。',
+  'ai.error.api_key_missing': 'APIキーが設定されていません。',
+  'ai.error.generation_failed': 'AIプロバイダーからの応答生成に失敗しました。',
   // AI Selection Menu
   'ai.selection.explain': '説明',
   'ai.selection.explain_tooltip': '説明（2-3文）',

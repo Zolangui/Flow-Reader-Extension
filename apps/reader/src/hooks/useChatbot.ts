@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { detectQueryLanguage } from '../lib/ai/language'
 import { LLMService } from '../lib/ai/llm'
 import { RAGService } from '../lib/ai/rag'
 import {
@@ -12,7 +13,6 @@ import {
     buildReadingSystemPrompt,
     buildReadingUserPrompt,
     buildSelectionActionPrompt,
-    detectQueryLanguage,
     generateQueryVariations,
     normalizeCitationsToFooter,
 } from '../lib/ai/retrieval'

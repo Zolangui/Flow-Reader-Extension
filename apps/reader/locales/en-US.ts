@@ -243,6 +243,13 @@ export default {
   'ai.no_context.final': "I couldn't find a direct answer in the book for this question.",
   'ai.no_context.index_required': "[No context found. The book may not be indexed. Please go to Settings > Advanced and click 'Re-index Book'.]",
 
+  // AI Error Messages
+  'ai.error.circuit_breaker': 'Quota exceeded. Please wait {seconds} seconds.',
+  'ai.error.rate_limit': 'Rate limit exceeded ({reason}). Please slow down.',
+  'ai.error.unsupported_provider': 'Unsupported provider.',
+  'ai.error.api_key_missing': 'API Key is not configured.',
+  'ai.error.generation_failed': 'Failed to generate response from AI provider.',
+
   // AI Selection Menu
   'ai.selection.explain': 'Explain',
   'ai.selection.explain_tooltip': 'Explain (2-3 sentences)',

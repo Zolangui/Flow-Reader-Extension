@@ -237,6 +237,15 @@ export default {
   // AI No-Context Messages
   'ai.no_context.can_search_deeper': '我在当前摘录中没有找到直接答案。您希望我在其他章节中进行更深入的搜索吗？',
   'ai.no_context.final': '我在书中没有找到这个问题的直接答案。',
+  'ai.no_context.index_required': '[未找到上下文。书籍可能未被索引。请转到设置 > 高级并点击"重新索引书籍"。]',
+
+  // AI Error Messages
+  'ai.error.circuit_breaker': '超出配额。请等待{seconds}秒。',
+  'ai.error.rate_limit': '超出速率限制（{reason}）。请放慢速度。',
+  'ai.error.unsupported_provider': '不支持的提供商。',
+  'ai.error.api_key_missing': 'API密钥未配置。',
+  'ai.error.generation_failed': 'AI提供商响应生成失败。',
+
   // AI Selection Menu
   'ai.selection.explain': '解释',
   'ai.selection.explain_tooltip': '解释（2-3句话）',
