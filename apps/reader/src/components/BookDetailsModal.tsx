@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react'
+import DOMPurify from 'dompurify'
+import React, { useEffect, useRef, useMemo } from 'react'
 import { MdClose, MdMenuBook } from 'react-icons/md'
 
 import { BookRecord } from '../db'
@@ -49,6 +50,15 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
   const percentage = Math.round((book.percentage || 0) * 100)
   const sizeMb = (book.size / (1024 * 1024)).toFixed(2)
 
+  // Security: Sanitize HTML description from ePub to prevent XSS
+  const sanitizedDescription = useMemo(() => {
+    if (!description) return ''
+    return DOMPurify.sanitize(description, {
+      ALLOWED_TAGS: ['p', 'br', 'b', 'i', 'em', 'strong', 'span', 'div', 'ul', 'ol', 'li', 'a'],
+      ALLOWED_ATTR: ['href', 'target', 'rel']
+    })
+  }, [description])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop - solid for better performance */}
@@ -71,10 +81,9 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
           <div
             className="aspect-[2/3] w-48 rounded-lg bg-cover bg-center shadow-2xl transition-transform hover:scale-[1.02] md:w-full"
             style={{
-              backgroundImage: `url("${
-                cover ||
+              backgroundImage: `url("${cover ||
                 `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="gray" fill-opacity="0.1" width="1" height="1"/></svg>`
-              }")`,
+                }")`,
             }}
           />
 
@@ -219,14 +228,14 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
             </div>
           </div>
 
-          {description && (
+          {sanitizedDescription && (
             <div className="mb-10 flex-1">
               <h3 className="text-text-light dark:text-text-dark mb-3 text-lg font-semibold">
                 {t('details.synopsis')}
               </h3>
               <div
                 className="text-subtle-light dark:text-subtle-dark prose dark:prose-invert max-w-none text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: description }}
+                dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
               />
             </div>
           )}

@@ -352,7 +352,9 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
             let groups: SelectGroup[] = []
 
             if (settings.provider === 'gemini') {
-                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${settings.apiKey}`)
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models`, {
+                    headers: { 'x-goog-api-key': settings.apiKey }
+                })
                 if (!res.ok) throw new Error('Failed to fetch from Google')
                 const data = await res.json()
 
@@ -377,10 +379,13 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                             // Use countTokens as a lightweight "ping". It's free and fast.
                             // If this fails (403/404), the user definitely can't use the model.
                             const verifyRes = await fetch(
-                                `https://generativelanguage.googleapis.com/v1beta/${m.name}:countTokens?key=${settings.apiKey}`,
+                                `https://generativelanguage.googleapis.com/v1beta/${m.name}:countTokens`,
                                 {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'x-goog-api-key': settings.apiKey
+                                    },
                                     body: JSON.stringify({ contents: [{ parts: [{ text: '' }] }] })
                                 }
                             )
