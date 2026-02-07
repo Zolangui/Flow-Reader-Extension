@@ -15,3 +15,31 @@ export const AnthropicIcon = ({ className }: { className?: string }) => (
         <path d="M17.76 19.12H19.98L13.84 4.54C13.58 3.92 12.98 3.52 12.31 3.52H11.66C10.99 3.52 10.39 3.92 10.13 4.54L4.02 19.12H6.24L7.54 16.03H16.46L17.76 19.12ZM8.42 13.92L11.95 5.5H12.02L15.55 13.92H8.42Z" />
     </svg>
 )
+
+export const LumenSparkleIcon = ({ className }: { className?: string }) => (
+    <svg viewBox="0 0 24 24" fill="none" width="1em" height="1em" className={className} xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="lumen-sparkle-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="currentColor" stopOpacity="1" />
+                <stop offset="100%" stopColor="currentColor" stopOpacity="0.6" />
+            </linearGradient>
+        </defs>
+        {/* Main Sparkle */}
+        <path
+            d="M12 2L14.43 8.35L21 10.5L14.43 12.65L12 19L9.57 12.65L3 10.5L9.57 8.35L12 2Z"
+            fill="url(#lumen-sparkle-grad)"
+        />
+        {/* Secondary Sparkle 1 */}
+        <path
+            d="M19 14L20.06 16.73L22.8 17.65L20.06 18.57L19 21.3L17.94 18.57L15.2 17.65L17.94 16.73L19 14Z"
+            fill="currentColor"
+            fillOpacity="0.8"
+        />
+        {/* Secondary Sparkle 2 */}
+        <path
+            d="M6 14L6.75 15.93L8.7 16.6L6.75 17.27L6 19.2L5.25 17.27L3.3 16.6L5.25 15.93L6 14Z"
+            fill="currentColor"
+            fillOpacity="0.5"
+        />
+    </svg>
+)

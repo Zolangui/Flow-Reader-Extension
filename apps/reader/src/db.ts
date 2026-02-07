@@ -17,6 +17,20 @@ export interface CoverRecord {
   cover: string | null
 }
 
+export interface ChatMessageRecord {
+  role: 'user' | 'assistant'
+  content: string
+  id: string
+}
+
+export interface ChatSessionRecord {
+  id: string
+  title?: string
+  messages: ChatMessageRecord[]
+  createdAt: number
+  updatedAt: number
+}
+
 export interface BookRecord {
   // TODO: use file hash as id
   id: string
@@ -38,7 +52,9 @@ export interface BookRecord {
   favorite?: boolean
   position?: number
   aiPersona?: string
-  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string; id: string }>
+  chatHistory?: ChatMessageRecord[]
+  chatSessions?: ChatSessionRecord[]
+  activeChatId?: string
 }
 
 export class DB extends Dexie {
@@ -48,10 +64,38 @@ export class DB extends Dexie {
   covers!: Table<CoverRecord>
   books!: Table<BookRecord>
   vectors!: Table<VectorRecord>
-  indices!: Table<{ bookId: string; kind: 'chunks' | 'chapters'; data: string; dim?: number; model?: string; version?: number }>
+  indices!: Table<{
+    bookId: string
+    kind: 'chunks' | 'chapters'
+    data: string
+    dim?: number
+    model?: string
+    version?: number
+    ragVersion?: string
+    locale?: string
+  }>
 
   constructor(name: string) {
     super(name)
+
+    // Versions reordered to appear chronologically at the end
+
+
+    // SOTA v7.2: Add ragVersion for explicit index compatibility checks
+    this.version(16).stores({
+      indices: '[bookId+kind], bookId, ragVersion'
+    })
+
+    // SOTA v6.3: Clean Migration for Indices (Fixes SchemaError)
+    // 2. Re-create with correct compound primary key AND individual indices for fallback queries
+    this.version(15).stores({
+      indices: '[bookId+kind], bookId'
+    })
+
+    // 1. Drop the table first to remove old schema conflicts (Nuclear Option)
+    this.version(14).stores({
+      indices: null
+    })
 
     this.version(13).stores({
       books:

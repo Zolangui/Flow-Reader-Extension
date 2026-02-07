@@ -17,15 +17,50 @@
   },
   "permissions": [
     "storage",
-    "windows"
+    "windows",
+    "identity"
   ],
   "host_permissions": [
-    "*://*.dropboxapi.com/*"
+    "*://*.dropboxapi.com/*",
+    "https://huggingface.co/*",
+    "https://cdn-lfs.huggingface.co/*",
+    "https://hf.co/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
-  }
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fastText/fastText.common.js",
+        "fastText/core/fastText.common.js",
+        "fastText/fastText.common.wasm",
+        "fastText/constants.mjs",
+        "fastText/FastText.mjs",
+        "fastText/FastTextModel.mjs",
+        "fastText/main/common.mjs",
+        "fastText/helpers/modules/common.mjs",
+        "fastText/helpers/modules/index.mjs",
+        "fastText/models/language-identification/common.mjs",
+        "fastText/models/language-identification/base.mjs",
+        "fastText/models/language-identification/assets/languages.json.mjs",
+        "fastText/models/language-identification/assets/lid.176.ftz",
+        "wasm/ort-wasm.wasm",
+        "wasm/ort-wasm-threaded.wasm",
+        "wasm/ort-wasm-simd.wasm",
+        "wasm/ort-wasm-simd-threaded.wasm",
+        "wasm/wllama.wasm",
+        "wasm/wllama-single.wasm",
+        "wasm/wllama-multi.wasm",
+        "wasm/wllama.worker.js",
+        "wasm/wllama.opfs.worker.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

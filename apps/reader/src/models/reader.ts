@@ -24,7 +24,7 @@ export function compareHref(
   navitemHref: string | undefined,
 ) {
   if (sectionHref && navitemHref) {
-    const [target] = navitemHref.split('#')
+    const [target] = String(navitemHref).split('#')
 
     return (
       sectionHref.endsWith(target!) ||
@@ -82,7 +82,7 @@ interface TimelineItem {
 }
 
 class BaseTab {
-  constructor(public readonly id: string, public readonly title = id) {}
+  constructor(public readonly id: string, public readonly title = id) { }
 
   get isBook(): boolean {
     return this instanceof BookTab
@@ -121,8 +121,9 @@ export class BookTab extends BaseTab {
   }
 
   display(target?: string, returnable = true) {
+    console.log("[Reader Model] display called with:", { target, returnable });
     if (target && this.sections) {
-      const [targetPath] = target.split('#')
+      const [targetPath] = String(target).split('#')
       const section = this.sections.find((s) => compareHref(s.href, targetPath))
       if (section) {
         const hashIndex = target.indexOf('#')

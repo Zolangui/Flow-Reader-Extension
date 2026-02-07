@@ -15,14 +15,45 @@
     },
     "default_title": "Lumen Read"
   },
-  "permissions": ["storage", "*://*.dropboxapi.com/*"],
+  "permissions": [
+    "storage",
+    "*://*.dropboxapi.com/*",
+    "https://huggingface.co/*",
+    "https://cdn-lfs.huggingface.co/*",
+    "https://hf.co/*",
+    "identity"
+  ],
   "background": {
     "scripts": ["background.js"]
   },
+  "web_accessible_resources": [
+        "fastText/fastText.common.js",
+        "fastText/core/fastText.common.js",
+        "fastText/fastText.common.wasm",
+        "fastText/constants.mjs",
+        "fastText/FastText.mjs",
+        "fastText/FastTextModel.mjs",
+    "fastText/main/common.mjs",
+    "fastText/helpers/modules/common.mjs",
+    "fastText/helpers/modules/index.mjs",
+    "fastText/models/language-identification/common.mjs",
+    "fastText/models/language-identification/base.mjs",
+    "fastText/models/language-identification/assets/languages.json.mjs",
+    "fastText/models/language-identification/assets/lid.176.ftz",
+    "wasm/ort-wasm.wasm",
+    "wasm/ort-wasm-threaded.wasm",
+    "wasm/ort-wasm-simd.wasm",
+    "wasm/ort-wasm-simd-threaded.wasm",
+    "wasm/wllama.wasm",
+    "wasm/wllama-single.wasm",
+    "wasm/wllama-multi.wasm",
+    "wasm/wllama.worker.js",
+    "wasm/wllama.opfs.worker.js"
+  ],
   "content_security_policy": "script-src 'self' 'unsafe-eval' 'sha256-Fc+vSsMVDhzLFPavAY0TI07pwX3aYwwk52HqqlJB358=' 'sha256-zb8ygSc2+G4sSd77nO/lyPNb/sawrcmNTL6Q1/fuKrM='; object-src 'self'",
   "browser_specific_settings": {
     "gecko": {
-      "id": "flow-reader@example.com"
+      "id": "Lumen-reader@example.com"
     }
   }
 }

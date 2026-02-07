@@ -1,17 +1,20 @@
 import { useEventListener } from '@literal-ui/hooks'
 import Dexie from 'dexie'
-import { parseCookies, destroyCookie } from 'nookies'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 
 import {
   ColorScheme,
   useColorScheme,
-  useForceRender,
   useTranslation,
 } from '@flow/reader/hooks'
 import { reader } from '@flow/reader/models'
 import { useSettings } from '@flow/reader/state'
-import { dbx, mapToToken, OAUTH_SUCCESS_MESSAGE } from '@flow/reader/sync'
+import {
+  authorizeDropbox,
+  clearDropboxRefreshToken,
+  getDropboxRefreshToken,
+  OAUTH_SUCCESS_MESSAGE,
+} from '@flow/reader/sync'
 
 export const Settings: React.FC = () => {
   const { scheme, setScheme } = useColorScheme()
@@ -61,6 +64,10 @@ export const Settings: React.FC = () => {
                 }}
               >
                 <option value="en-US">English</option>
+                <option value="pt-BR">Português (Brasil)</option>
+                <option value="es-ES">Español</option>
+                <option value="fr-FR">Français</option>
+                <option value="de-DE">Deutsch</option>
                 <option value="zh-CN">简体中文</option>
                 <option value="ja-JP">日本語</option>
               </select>
@@ -131,16 +138,24 @@ export const Settings: React.FC = () => {
 }
 
 const Synchronization: React.FC = () => {
-  const cookies = parseCookies()
-  const refreshToken = cookies[mapToToken['dropbox']]
-  const render = useForceRender()
+  const [refreshToken, setRefreshToken] = useState<string | null>(null)
   const t = useTranslation('settings.synchronization')
 
   useEventListener('message', (e) => {
     if (e.data === OAUTH_SUCCESS_MESSAGE) {
-      window.location.reload()
+      getDropboxRefreshToken().then((token) => setRefreshToken(token))
     }
   })
+
+  useEffect(() => {
+    let mounted = true
+    getDropboxRefreshToken().then((token) => {
+      if (mounted) setRefreshToken(token)
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   return (
     <div className="border-b border-gray-200 pb-8 dark:border-gray-700">
@@ -179,9 +194,9 @@ const Synchronization: React.FC = () => {
           {refreshToken ? (
             <button
               className="bg-primary text-on-primary w-full rounded-full px-6 py-2.5 font-medium shadow-sm transition-all hover:shadow-md sm:w-auto"
-              onClick={() => {
-                destroyCookie(null, mapToToken['dropbox'])
-                render()
+              onClick={async () => {
+                await clearDropboxRefreshToken()
+                setRefreshToken(null)
               }}
             >
               {t('unauthorize')}
@@ -189,20 +204,14 @@ const Synchronization: React.FC = () => {
           ) : (
             <button
               className="bg-primary text-on-primary w-full rounded-full px-6 py-2.5 font-medium shadow-sm transition-all hover:shadow-md sm:w-auto"
-              onClick={() => {
-                const redirectUri =
-                  window.location.origin + '/api/callback/dropbox'
-
-                dbx.auth
-                  .getAuthenticationUrl(
-                    redirectUri,
-                    JSON.stringify({ redirectUri }),
-                    'code',
-                    'offline',
-                  )
-                  .then((url) => {
-                    window.open(url as string, '_blank')
-                  })
+              onClick={async () => {
+                try {
+                  await authorizeDropbox()
+                  const token = await getDropboxRefreshToken()
+                  setRefreshToken(token)
+                } catch (err) {
+                  console.error('Dropbox auth failed:', err)
+                }
               }}
             >
               {t('authorize')}

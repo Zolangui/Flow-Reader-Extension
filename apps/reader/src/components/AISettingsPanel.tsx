@@ -1,16 +1,19 @@
 import clsx from 'clsx'
 import React, { useState } from 'react'
-import { MdDeleteSweep as _MdDeleteSweep, MdLock as _MdLock, MdRefresh as _MdRefresh, MdSearch as _MdSearch, MdChevronRight as _MdChevronRight, MdCheck as _MdCheck, MdSmartToy as _MdSmartToy, MdComputer as _MdComputer, MdSettings as _MdSettings, MdClose as _MdClose, MdDns as _MdDns, MdVpnKey as _MdVpnKey, MdVisibility as _MdVisibility, MdVisibilityOff as _MdVisibilityOff, MdContentPaste as _MdContentPaste, MdStorage as _MdStorage } from 'react-icons/md'
+import { MdDeleteSweep as _MdDeleteSweep, MdLock as _MdLock, MdRefresh as _MdRefresh, MdSearch as _MdSearch, MdChevronRight as _MdChevronRight, MdCheck as _MdCheck, MdSmartToy as _MdSmartToy, MdComputer as _MdComputer, MdSettings as _MdSettings, MdClose as _MdClose, MdDns as _MdDns, MdVpnKey as _MdVpnKey, MdVisibility as _MdVisibility, MdVisibilityOff as _MdVisibilityOff, MdContentPaste as _MdContentPaste, MdStorage as _MdStorage, MdTranslate as _MdTranslate } from 'react-icons/md'
 import { SiOpenai as _SiOpenai } from 'react-icons/si'
 
 import { db } from '../db'
 import { useTranslation } from '../hooks/useTranslation'
+import { getFastTextStatus, normalizeLangForRAG, preloadFastText } from '../lib/ai/language'
 import { RAGService } from '../lib/ai/rag'
+import { getSlmStatus, getSlmWarning, preloadSlm } from '../lib/ai/rewriter'
 import { reader } from '../models'
 import { defaultAIConfig, useAISettings, useChatbotState, useSettings } from '../state'
 
 import { Button } from './Button'
 import { TextField } from './Form'
+import { StatusIndicator } from './StatusIndicator'
 import { AnthropicIcon as _AnthropicIcon, GeminiIcon as _GeminiIcon } from './icons/ProviderIcons'
 
 const MdDeleteSweep = _MdDeleteSweep as any
@@ -29,6 +32,7 @@ const MdVisibility = _MdVisibility as any
 const MdVisibilityOff = _MdVisibilityOff as any
 const MdContentPaste = _MdContentPaste as any
 const MdStorage = _MdStorage as any
+const MdTranslate = _MdTranslate as any
 const SiOpenai = _SiOpenai as any
 const GeminiIcon = _GeminiIcon as any
 const AnthropicIcon = _AnthropicIcon as any
@@ -60,6 +64,7 @@ interface PremiumSelectProps {
 }
 
 const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, onChange, searchable, icon, placeholder }) => {
+    const t = useTranslation('ai')
     const [isOpen, setIsOpen] = useState(false)
     const [search, setSearch] = useState('')
     const containerRef = React.useRef<HTMLDivElement>(null)
@@ -78,7 +83,7 @@ const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, on
     const filteredGroups = groups.map(group => ({
         ...group,
         options: group.options.filter(o =>
-            o.value.toLowerCase().includes(search.toLowerCase()) ||
+            (o.value || '').toLowerCase().includes(search.toLowerCase()) ||
             (o.label && o.label.toLowerCase().includes(search.toLowerCase()))
         )
     })).filter(group => group.options.length > 0)
@@ -93,19 +98,24 @@ const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, on
 
     React.useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as HTMLElement
+            const target = event.target as HTMLElement;
+            if (containerRef.current && !containerRef.current.contains(target)) {
+                // SOTA UX: Don't close if clicking within the AI settings panel (e.g., scrollbars, padding)
+                // This prevents accidental closing when dragging the main sidebar scrollbar.
+                if (target.closest('.ai-settings-panel')) {
+                    // Check if it's a click that *should* close (like clicking another select or a button)
+                    // but for now, we prioritize allowing scrollbar interactions in the panel.
 
-            if (target.clientWidth < target.offsetWidth || target.clientHeight < target.offsetHeight) {
-                const rect = target.getBoundingClientRect()
-                const clickX = event.clientX - rect.left
-                const clickY = event.clientY - rect.top
+                    // Detect scrollbar click via coordinate check (standard heuristic)
+                    const isScrollbar = target.clientWidth < target.offsetWidth || target.clientHeight < target.offsetHeight;
+                    if (isScrollbar) return;
 
-                if (clickX > target.clientWidth || clickY > target.clientHeight) {
-                    return
+                    // If the user clicked specifically on the scrollable container's background
+                    // (prevents closing when clicking the track of the scrollbar)
+                    if (target.classList.contains('ai-settings-panel-content')) return;
+                    if (target.classList.contains('custom-scrollbar')) return;
                 }
-            }
 
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
                 setIsOpen(false)
             }
         }
@@ -130,7 +140,7 @@ const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, on
                         {selectedOption?.icon || icon}
                     </span>
                     <span className="truncate font-medium capitalize">
-                        {selectedOption?.label || selectedOption?.value || placeholder || 'Select...'}
+                        {selectedOption?.label || selectedOption?.value || placeholder || t('settings.select_model_placeholder')}
                     </span>
                 </div>
                 {React.createElement(MdChevronRight as any, { className: clsx('text-lg text-subtle transition-transform flex-shrink-0', isOpen && 'rotate-90') })}
@@ -145,7 +155,7 @@ const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, on
                                 <input
                                     autoFocus
                                     className="w-full pl-9 pr-3 py-2 bg-white dark:bg-gray-900 border border-border-light dark:border-border-dark rounded-lg text-xs focus:border-primary focus:outline-none"
-                                    placeholder="Search..."
+                                    placeholder={t('settings.search_placeholder')}
                                     value={search}
                                     onChange={e => setSearch(e.target.value)}
                                     onClick={e => e.stopPropagation()}
@@ -155,7 +165,7 @@ const PremiumSelect: React.FC<PremiumSelectProps> = ({ label, value, options, on
                     )}
                     <div className="max-h-[250px] overflow-y-auto p-1 custom-scrollbar">
                         {filteredGroups.length === 0 && (
-                            <div className="p-4 text-center text-xs text-subtle italic">No results found</div>
+                            <div className="p-4 text-center text-xs text-subtle italic">{t('settings.no_results')}</div>
                         )}
                         {filteredGroups.map((group, gIdx) => (
                             <div key={group.label || gIdx} className="space-y-1">
@@ -201,6 +211,7 @@ interface PremiumInputProps {
 }
 
 const PremiumInput: React.FC<PremiumInputProps> = ({ label, value, onChange, placeholder, type = 'text' }) => {
+    const t = useTranslation('ai')
     const [isVisible, setIsVisible] = useState(false)
     const isPassword = type === 'password'
 
@@ -223,7 +234,7 @@ const PremiumInput: React.FC<PremiumInputProps> = ({ label, value, onChange, pla
                 {/* Optional Status Indicator */}
                 {value.length > 5 && (
                     <span className="text-[10px] text-primary flex items-center gap-1">
-                        <MdCheck size={12} /> Set
+                        <MdCheck size={12} /> {t('settings.set_status')}
                     </span>
                 )}
             </div>
@@ -245,7 +256,7 @@ const PremiumInput: React.FC<PremiumInputProps> = ({ label, value, onChange, pla
                         <button
                             onClick={handlePaste}
                             className="p-1.5 text-subtle hover:text-text hover:bg-surface-variant rounded-lg transition-colors"
-                            title="Paste from clipboard"
+                            title={t('settings.paste_tooltip')}
                         >
                             <MdContentPaste size={16} />
                         </button>
@@ -255,7 +266,7 @@ const PremiumInput: React.FC<PremiumInputProps> = ({ label, value, onChange, pla
                         <button
                             onClick={() => setIsVisible(!isVisible)}
                             className="p-1.5 text-subtle hover:text-text hover:bg-surface-variant rounded-lg transition-colors"
-                            title={isVisible ? "Hide" : "Show"}
+                            title={isVisible ? t('settings.hide_password') : t('settings.show_password')}
                         >
                             {isVisible ? <MdVisibilityOff size={16} /> : <MdVisibility size={16} />}
                         </button>
@@ -275,6 +286,23 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
 
     const [loadingModels, setLoadingModels] = useState(false)
     const [availableModels, setAvailableModels] = useState<SelectGroup[]>([])
+    const [slmStatus, setSlmStatus] = useState<ReturnType<typeof getSlmStatus>>(getSlmStatus())
+    const [slmError, setSlmError] = useState<string | null>(null)
+    const [slmProgress, setSlmProgress] = useState(0)
+    const [slmWarning, setSlmWarning] = useState<string | null>(getSlmWarning())
+    const [embeddingStatus, setEmbeddingStatus] = useState<ReturnType<typeof RAGService.getEmbeddingStatus>>(RAGService.getEmbeddingStatus())
+    const [embeddingError, setEmbeddingError] = useState<string | null>(null)
+    const [embeddingProgress, setEmbeddingProgress] = useState(0)
+    const [embeddingWarning, setEmbeddingWarning] = useState<string | null>(RAGService.getEmbeddingWarning())
+    const [fastTextStatus, setFastTextStatus] = useState<ReturnType<typeof getFastTextStatus>>(getFastTextStatus())
+    const [fastTextError, setFastTextError] = useState<string | null>(null)
+    const statusText = {
+        ready: t('status.ready'),
+        warning: t('status.warning'),
+        downloading: t('status.downloading'),
+        error: t('status.error'),
+        clickToDownload: t('status.click_to_download'),
+    }
 
     const [isIndexing, setIsIndexing] = useState(false)
     const [indexProgress, setIndexProgress] = useState(0)
@@ -285,12 +313,97 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
         return () => { isMounted.current = false }
     }, [])
 
+    React.useEffect(() => {
+        const statusHandler = (e: any) => {
+            const next = e?.detail?.status
+            if (next === 'unknown' || next === 'downloading' || next === 'ready' || next === 'warning' || next === 'error') {
+                setSlmStatus(next as any)
+            }
+            const warning = e?.detail?.warning
+            if (typeof warning === 'string') {
+                setSlmWarning(warning)
+            } else if (warning === null) {
+                setSlmWarning(null)
+            }
+        }
+        const progressHandler = (e: any) => {
+            if (typeof e?.detail?.progress === 'number') setSlmProgress(e.detail.progress)
+        }
+        const errorHandler = (e: any) => {
+            const message = e?.detail?.message
+            if (typeof message === 'string' && message.length > 0) {
+                setSlmError(message)
+            }
+        }
+        window.addEventListener('slm-status', statusHandler)
+        window.addEventListener('slm-progress', progressHandler)
+        window.addEventListener('slm-error', errorHandler)
+        return () => {
+            window.removeEventListener('slm-status', statusHandler)
+            window.removeEventListener('slm-progress', progressHandler)
+            window.removeEventListener('slm-error', errorHandler)
+        }
+    }, [])
+
+    React.useEffect(() => {
+        const statusHandler = (e: any) => {
+            const next = e?.detail?.status
+            if (next === 'unknown' || next === 'downloading' || next === 'ready' || next === 'warning' || next === 'error') {
+                setEmbeddingStatus(next as any)
+            }
+            const warning = e?.detail?.warning
+            if (typeof warning === 'string') {
+                setEmbeddingWarning(warning)
+            } else if (warning === null) {
+                setEmbeddingWarning(null)
+            }
+        }
+        const progressHandler = (e: any) => {
+            if (typeof e?.detail?.progress === 'number') setEmbeddingProgress(e.detail.progress)
+        }
+        const errorHandler = (e: any) => {
+            const message = e?.detail?.message
+            if (typeof message === 'string' && message.length > 0) {
+                setEmbeddingError(message)
+            }
+        }
+        window.addEventListener('embedding-status', statusHandler)
+        window.addEventListener('embedding-progress', progressHandler)
+        window.addEventListener('embedding-error', errorHandler)
+        return () => {
+            window.removeEventListener('embedding-status', statusHandler)
+            window.removeEventListener('embedding-progress', progressHandler)
+            window.removeEventListener('embedding-error', errorHandler)
+        }
+    }, [])
+
+    React.useEffect(() => {
+        const handler = (e: any) => {
+            const next = e?.detail?.status
+            if (next === 'unknown' || next === 'downloading' || next === 'ready' || next === 'error') {
+                setFastTextStatus(next as any)
+            }
+        }
+        const errorHandler = (e: any) => {
+            const message = e?.detail?.message
+            if (typeof message === 'string' && message.length > 0) {
+                setFastTextError(message)
+            }
+        }
+        window.addEventListener('fasttext-status', handler)
+        window.addEventListener('fasttext-error', errorHandler)
+        return () => {
+            window.removeEventListener('fasttext-status', handler)
+            window.removeEventListener('fasttext-error', errorHandler)
+        }
+    }, [])
+
     const handleChange = (key: keyof typeof settings, value: any) => {
         setSettings(prev => ({ ...prev, [key]: value }))
     }
 
     const resetDefaults = () => {
-        if (confirm('Reset AI parameters to defaults? (Your API Key and Base URL will be preserved)')) {
+        if (confirm(t('confirm_reset'))) {
             setSettings(prev => ({
                 ...defaultAIConfig,
                 apiKey: prev.apiKey,
@@ -301,14 +414,14 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
     }
 
     const clearHistory = () => {
-        if (confirm('Clear all chat messages and memory for this session?')) {
+        if (confirm(t('confirm_clear'))) {
             setChatState(prev => ({ ...prev, messages: [] }))
         }
     }
 
     const reindexBook = async () => {
         const bookId = reader.focusedBookTab?.book.id
-        if (!bookId) return alert('No active book to index.')
+        if (!bookId) return alert(t('index.no_book'))
 
         setIsIndexing(true)
         setIndexProgress(0)
@@ -318,8 +431,11 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
             if (!fileRecord) throw new Error('Book file not found in local database.')
 
             const rag = RAGService.getInstance()
-            // SOTA: Pass book language for accurate segmentation (fallback to UI locale or 'en')
-            const bookLang = reader.focusedBookTab?.book.metadata?.language || appSettings.locale || 'en'
+            // SOTA: Pass normalized book language for accurate segmentation
+            const bookLang = normalizeLangForRAG(
+                reader.focusedBookTab?.book.metadata?.language,
+                appSettings.locale || 'en'
+            )
 
             await rag.indexBook(fileRecord.file, bookId, (p) => {
                 if (isMounted.current) {
@@ -327,12 +443,11 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                 }
             }, bookLang)
             if (isMounted.current) {
-                alert('Book indexed successfully! The AI can now answer questions about its content.')
+                alert(t('index.success'))
             }
         } catch (e: any) {
-            console.error('Indexing failed:', e)
             if (isMounted.current) {
-                alert(`Indexing failed: ${e.message}`)
+                alert(t('index.failed', { error: e.message }))
             }
         } finally {
             if (isMounted.current) {
@@ -344,7 +459,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
 
 
     const fetchModels = React.useCallback(async () => {
-        if (!settings.apiKey) return alert('Please enter an API Key first')
+        if (!settings.apiKey) return alert(t('settings.enter_api_key_first'))
         setLoadingModels(true)
         setAvailableModels([])
 
@@ -444,10 +559,10 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                 })
 
                 groups = [
-                    { label: '🧠 Reasoning', options: reasoning.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '💪 Powerhouse', options: powerhouse.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '⚡ Fast / Efficient', options: fast.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '🧪 Other', options: experimental.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }
+                    { label: `🧠 ${t('settings.model_category.reasoning')}`, options: reasoning.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `💪 ${t('settings.model_category.powerhouse')}`, options: powerhouse.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `⚡ ${t('settings.model_category.fast')}`, options: fast.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `🧪 ${t('settings.model_category.other')}`, options: experimental.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }
                 ].filter(g => g.options.length > 0)
 
             } else if (settings.provider === 'openai') {
@@ -493,10 +608,10 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                 })
 
                 groups = [
-                    { label: '🧠 Reasoning', options: reasoning.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '💪 Powerhouse', options: powerhouse.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '⚡ Fast / Efficient', options: fast.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
-                    { label: '🧪 Other', options: experimental.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }
+                    { label: `🧠 ${t('settings.model_category.reasoning')}`, options: reasoning.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `💪 ${t('settings.model_category.powerhouse')}`, options: powerhouse.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `⚡ ${t('settings.model_category.fast')}`, options: fast.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) },
+                    { label: `🧪 ${t('settings.model_category.other')}`, options: experimental.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }
                 ].filter(g => g.options.length > 0)
 
             } else if (settings.provider === 'anthropic') {
@@ -516,17 +631,17 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                     icon: <AnthropicIcon />
                 }))
 
-                groups = [{ label: 'Claude 3 Series', options: options.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }]
+                groups = [{ label: t('settings.claude_series'), options: options.sort((a, b) => b.value.localeCompare(a.value, undefined, { numeric: true })) }]
             }
 
             setAvailableModels(groups)
         } catch (e) {
-            alert('Could not fetch models. Check your API Key or connectivity.')
+            alert(t('settings.fetch_models_error'))
             console.error(e)
         } finally {
             setLoadingModels(false)
         }
-    }, [settings.apiKey, settings.provider])
+    }, [settings.apiKey, settings.provider, t])
 
     React.useEffect(() => {
         if (settings.apiKey && ['openai', 'gemini', 'anthropic'].includes(settings.provider)) {
@@ -535,7 +650,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
     }, [settings.provider, settings.apiKey, fetchModels])
 
     return (
-        <div className={clsx('flex flex-col h-full bg-white dark:bg-gray-900', className)}>
+        <div className={clsx('flex flex-col h-full bg-white dark:bg-gray-900 ai-settings-panel', className)}>
             {/* Sticky Header Group */}
             <div className="sticky top-0 z-[50] bg-white dark:bg-gray-900 border-b border-border-light dark:border-border-dark">
                 {/* Header Title */}
@@ -544,7 +659,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                             <MdSettings className="text-2xl" />
                         </div>
-                        <h3 className="font-bold text-lg tracking-tight">AI Configuration</h3>
+                        <h3 className="font-bold text-lg tracking-tight">{t('settings.config_title')}</h3>
                     </div>
                     {!isSetup && (
                         <button
@@ -575,7 +690,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white dark:bg-gray-900">
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white dark:bg-gray-900 ai-settings-panel-content custom-scrollbar">
 
                 {/* GENERAL TAB */}
                 {activeTab === 'General' && (
@@ -604,7 +719,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 label={t('api_key')}
                                 value={settings.apiKey}
                                 onChange={(val) => handleChange('apiKey', val)}
-                                placeholder={t('api_key_placeholder') || 'Paste your key here...'}
+                                placeholder={t('settings.api_key_placeholder')}
                                 type="password"
                             />
                         )}
@@ -614,8 +729,8 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                             <div className="p-3 bg-primary/5 border border-primary/10 rounded-xl space-y-3">
                                 <div className="text-[11px] text-primary/80 font-medium leading-relaxed">
                                     {settings.provider === 'local'
-                                        ? t('local_provider_desc') || "Connect to local inference servers like Ollama or LM Studio. No data leaves your machine."
-                                        : t('custom_provider_desc') || "Connect to any OpenAI-compatible API proxy or specialized endpoint (e.g., OpenRouter, Anyscale)."
+                                        ? t('settings.model_hint.local')
+                                        : t('settings.model_hint.custom')
                                     }
                                 </div>
                                 <div className="space-y-1.5">
@@ -630,7 +745,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 </div>
                                 {settings.provider === 'custom' && (
                                     <PremiumInput
-                                        label={t('proxy_api_key') || "Proxy API Key (Optional)"}
+                                        label={t('settings.proxy_api_key')}
                                         value={settings.apiKey}
                                         onChange={(val) => handleChange('apiKey', val)}
                                         type="password"
@@ -650,7 +765,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                         className="text-[10px] text-primary hover:underline disabled:opacity-50 flex items-center gap-1 font-medium"
                                     >
                                         <MdRefresh className={clsx(loadingModels && 'animate-spin')} />
-                                        {loadingModels ? t('chatbot.thinking').replace('...', '') : t('maintenance.refresh_list') || 'Refresh List'}
+                                        {loadingModels ? t('chatbot.thinking').replace('...', '') : t('maintenance.refresh_list')}
                                     </button>
                                 )}
                             </div>
@@ -661,18 +776,79 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 options={availableModels.length > 0 ? availableModels : [{ value: settings.model, icon: <MdSmartToy /> }]}
                                 onChange={(val) => handleChange('model', val)}
                                 searchable={availableModels.reduce((acc, g) => acc + (g.options?.length || 0), 0) > 5}
-                                placeholder="Select or type model name"
+                                placeholder={t('settings.select_model_placeholder')}
                                 icon={<MdSmartToy />}
                             />
 
-                            <div className="p-2.5 rounded-lg bg-surface-1 border border-border-light dark:border-border-dark">
-                                <p className="text-[10px] text-subtle leading-normal italic opacity-80">
-                                    {settings.provider === 'gemini' && 'Best for speed: gemini-1.5-flash. Best for quality: gemini-1.5-pro.'}
-                                    {settings.provider === 'openai' && 'Best for speed: gpt-4o-mini. Best for quality: gpt-4o.'}
-                                    {settings.provider === 'anthropic' && 'Highly recommended: claude-3-5-sonnet-latest.'}
-                                    {settings.provider === 'local' && 'Connect to Ollama/LM Studio. Ensure your local server reflects OpenAI\'s API structure.'}
-                                    {settings.provider === 'custom' && 'Use any OpenAI-compatible API proxy or specialized endpoint.'}
-                                </p>
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                                <PremiumSelect
+                                    label={t('answer_depth')}
+                                    value={settings.answerDepth}
+                                    options={[
+                                        { value: 'short', label: t('answer_depth.short'), icon: <MdChevronRight /> },
+                                        { value: 'balanced', label: t('answer_depth.balanced'), icon: <MdChevronRight /> },
+                                        { value: 'deep', label: t('answer_depth.deep'), icon: <MdChevronRight /> }
+                                    ]}
+                                    onChange={(val) => handleChange('answerDepth', val)}
+                                />
+                                <PremiumSelect
+                                    label={t('scope')}
+                                    value={settings.aiScope}
+                                    options={[
+                                        { value: 'book_only', label: t('scope.book_only'), icon: <MdLock /> },
+                                        { value: 'book_plus_discussion', label: t('scope.plus_discussion'), icon: <MdSmartToy /> }
+                                    ]}
+                                    onChange={(val) => handleChange('aiScope', val)}
+                                />
+                            </div>
+
+                            <div className="p-3 bg-surface-1 border border-border-light dark:border-border-dark rounded-xl space-y-3">
+                                <label className="block text-[10px] font-bold text-subtle uppercase tracking-wider ml-1">{t('settings.local_models_status')}</label>
+                                <div className="flex items-center justify-center gap-4">
+                                    <StatusIndicator
+                                        label="SLM"
+                                        status={slmStatus}
+                                        progress={slmProgress}
+                                        onClick={preloadSlm}
+                                        icon={<MdSmartToy className="text-[14px]" />}
+                                        tooltip={t('slm_tooltip')}
+                                        statusText={statusText}
+                                        errorMessage={slmError}
+                                        warningMessage={
+                                            slmWarning === 'single_thread'
+                                                ? t('status.single_thread')
+                                                : slmWarning === 'preload_timeout'
+                                                    ? t('status.preload_timeout')
+                                                    : null
+                                        }
+                                    />
+                                    <StatusIndicator
+                                        label="RAG"
+                                        status={embeddingStatus}
+                                        progress={embeddingProgress}
+                                        onClick={RAGService.preloadEmbeddings}
+                                        icon={<MdStorage className="text-[14px]" />}
+                                        tooltip={t('rag_tooltip')}
+                                        statusText={statusText}
+                                        errorMessage={embeddingError}
+                                        warningMessage={
+                                            embeddingWarning === 'single_thread'
+                                                ? t('status.single_thread')
+                                                : embeddingWarning === 'preload_timeout'
+                                                    ? t('status.preload_timeout')
+                                                    : null
+                                        }
+                                    />
+                                    <StatusIndicator
+                                        label="LID"
+                                        status={fastTextStatus}
+                                        onClick={preloadFastText}
+                                        icon={<MdTranslate className="text-[14px]" />}
+                                        tooltip={t('fasttext_tooltip')}
+                                        statusText={statusText}
+                                        errorMessage={fastTextError}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -687,10 +863,10 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 className="flex-1 w-full p-3 rounded-xl bg-surface-1 border border-border-light dark:border-border-dark focus:border-primary focus:outline-none min-h-[200px] text-sm leading-relaxed resize-none shadow-inner"
                                 value={settings.systemPrompt}
                                 onChange={(e) => handleChange('systemPrompt', e.target.value)}
-                                placeholder={t('system_prompt_placeholder') || 'Describe how the AI should behave...'}
+                                placeholder={t('settings.system_prompt_placeholder')}
                             />
                             <p className="text-[11px] text-subtle mt-2 leading-relaxed">
-                                Define the AI&apos;s personality and boundaries. When <strong>Adaptive Context</strong> is enabled, this will be automatically enhanced based on the book metadata.
+                                {t('settings.adaptive_context_hint')}
                             </p>
                         </div>
                     </div>
@@ -819,27 +995,7 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 </div>
                             </label>
 
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                                <PremiumSelect
-                                    label={t('answer_depth')}
-                                    value={settings.answerDepth}
-                                    options={[
-                                        { value: 'short', label: t('answer_depth.short'), icon: <MdChevronRight /> },
-                                        { value: 'balanced', label: t('answer_depth.balanced'), icon: <MdChevronRight /> },
-                                        { value: 'deep', label: t('answer_depth.deep'), icon: <MdChevronRight /> }
-                                    ]}
-                                    onChange={(val) => handleChange('answerDepth', val)}
-                                />
-                                <PremiumSelect
-                                    label={t('scope')}
-                                    value={settings.aiScope}
-                                    options={[
-                                        { value: 'book_only', label: t('scope.book_only'), icon: <MdLock /> },
-                                        { value: 'book_plus_discussion', label: t('scope.plus_discussion'), icon: <MdSmartToy /> }
-                                    ]}
-                                    onChange={(val) => handleChange('aiScope', val)}
-                                />
-                            </div>
+
                         </div>
 
                         <div className="py-2.5">
@@ -852,14 +1008,14 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                                 min="0"
                                 max="2"
                                 step="0.1"
-                                className="w-full h-8 cursor-pointer accent-primary bg-transparent"
+                                className="premium-slider"
                                 value={settings.temperature}
                                 onChange={(e) => handleChange('temperature', parseFloat(e.target.value))}
                             />
                             <div className="flex justify-between text-[10px] text-subtle mt-1 px-0.5 font-bold uppercase tracking-tight">
-                                <span>{t('temperature.precise') || 'Precise'}</span>
-                                <span>{t('temperature.balanced') || 'Balanced'}</span>
-                                <span>{t('temperature.creative') || 'Creative'}</span>
+                                <span>{t('settings.temperature.precise')}</span>
+                                <span>{t('settings.temperature.balanced')}</span>
+                                <span>{t('settings.temperature.creative')}</span>
                             </div>
                         </div>
 
@@ -873,13 +1029,13 @@ export const AISettingsPanel: React.FC<{ className?: string, onClose: () => void
                 <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/10 rounded-xl text-subtle">
                     <MdLock className="text-primary text-xl flex-shrink-0" />
                     <p className="text-[10px] leading-relaxed">
-                        <strong className="text-primary uppercase tracking-tighter mr-1">{t('privacy_first') || 'Privacy First'}</strong>
-                        {t('privacy_desc') || 'Your API keys and chat history are stored encrypted locally in your browser. We never see your data.'}
+                        <strong className="text-primary uppercase tracking-tighter mr-1">{t('settings.privacy_first')}</strong>
+                        {t('settings.privacy_desc')}
                     </p>
                 </div>
 
                 <Button className="w-full py-3.5 flex items-center justify-center gap-2 font-bold shadow-lg shadow-primary/20" onClick={onClose}>
-                    {isSetup ? t('start_assistant') || 'Start Assistant' : t('save_changes') || 'Save Changes'}
+                    {isSetup ? t('settings.start_assistant') : t('settings.save_changes')}
                 </Button>
             </div>
         </div>

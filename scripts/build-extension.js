@@ -26,6 +26,20 @@ async function build() {
     console.log(`Cleaning ${distDir}...`)
     await fs.remove(distDir)
 
+    // 1.5 Generate CSP-safe wllama worker + wasm assets (for Firefox MV3).
+    // These live under apps/reader/public/wasm so `next export` can include them in `out/wasm`.
+    // This protects us from accidental `git clean -fd` removing untracked generated files.
+    try {
+      console.log('Generating wllama worker assets...')
+      execSync('node scripts/generate-wllama-worker.js', {
+        stdio: 'inherit',
+        cwd: rootDir,
+        env: { ...process.env },
+      })
+    } catch (e) {
+      console.warn('Warning: failed to generate wllama worker assets:', e?.message || e)
+    }
+
     // 2. Run the static export (SKIP_SENTRY=true and FAST_BUILD=true for speed)
     console.log('Building the reader app for static export...')
 
@@ -69,6 +83,16 @@ async function build() {
       fs.copy(
         path.join(extensionDir, 'public', 'background.js'),
         path.join(distDir, 'background.js'),
+      ),
+
+      // Copy wllama WASM files
+      fs.copy(
+        path.join(readerDir, 'node_modules', '@wllama', 'wllama', 'esm', 'single-thread', 'wllama.wasm'),
+        path.join(distDir, 'wasm', 'wllama-single.wasm'),
+      ),
+      fs.copy(
+        path.join(readerDir, 'node_modules', '@wllama', 'wllama', 'esm', 'multi-thread', 'wllama.wasm'),
+        path.join(distDir, 'wasm', 'wllama-multi.wasm'),
       ),
     ])
 

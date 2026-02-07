@@ -1,8 +1,17 @@
 export const AI_CONFIG = {
     embeddingModel: 'Xenova/all-MiniLM-L6-v2', // Good balance of speed/quality for browser
+    // Firefox MV3 SOTA: wllama + E5-Large-Instruct (Best Multilingual)
+    embeddingModelFirefox: 'Ralriki/multilingual-e5-large-instruct-GGUF@q6_k',
+    embeddingModelFirefoxUrl: 'https://huggingface.co/Ralriki/multilingual-e5-large-instruct-GGUF/resolve/main/multilingual-e5-large-instruct-q6_k.gguf',
+    embeddingModelFirefoxPrefixes: {
+        query: 'query: ',
+        document: 'passage: '
+    },
+    embeddingDimFirefox: 1024,
+    embeddingDim: 384, // Truncation target (set < model dim only if MRL-capable)
     chunkSize: 1000,
     chunkOverlap: 200,
-    vectorStoreName: 'flow-vectors',
+    vectorStoreName: 'lumen-vectors',
     ragVersion: 3.10, // v3.10 introduces UX Hardening (Depth/Scope)
 }
 

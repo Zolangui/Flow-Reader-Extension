@@ -45,3 +45,12 @@ reader_dev.log
 
 # Archives
 apps/*.zip
+
+# Generated ML assets (created during build / runtime)
+apps/reader/public/models/
+scripts/.translate-cache.json
+scripts/missing-*.json
+
+# Local build/download scratch
+.tmp_fasttext_pkg2/
+fasttext.wasm.js-*.tgz

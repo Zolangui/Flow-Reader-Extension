@@ -19,7 +19,21 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "downlevelIteration": true,
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "paths": {
+      "@flow/reader/*": [
+        "apps/reader/src/*"
+      ],
+      "@flow/internal": [
+        "packages/internal/src/index.ts"
+      ],
+      "@flow/epubjs/*": [
+        "packages/epubjs/*"
+      ],
+      "@wllama/wllama": [
+        "apps/reader/node_modules/@wllama/wllama/esm/index.d.ts"
+      ]
+    }
   },
   "include": [
     "next-env.d.ts",

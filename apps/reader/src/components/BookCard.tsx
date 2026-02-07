@@ -5,6 +5,7 @@ import { BookRecord } from '../db'
 import { useTranslation } from '../hooks'
 
 import { BookMenu } from './BookMenu'
+import { LumenSparkleIcon } from './icons/ProviderIcons'
 
 export interface BookCardProps {
   book: BookRecord
@@ -15,6 +16,7 @@ export interface BookCardProps {
   onDownload: () => void
   onRemove: () => void
   onViewDetails: () => void
+  isIndexed?: boolean
 }
 
 const placeholder = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="gray" fill-opacity="0.1" width="1" height="1"/></svg>`
@@ -28,6 +30,7 @@ export const BookCard: React.FC<BookCardProps> = ({
   onDownload,
   onRemove,
   onViewDetails,
+  isIndexed,
 }) => {
   const t = useTranslation()
   const title = book.metadata?.title || book.name
@@ -48,6 +51,12 @@ export const BookCard: React.FC<BookCardProps> = ({
           {book.favorite && (
             <div className="size-5 absolute -top-1 -left-1 flex items-center justify-center rounded-md bg-black/60 p-0.5 text-yellow-400 backdrop-blur-sm">
               <MdStar className="text-xs" />
+            </div>
+          )}
+
+          {isIndexed && (
+            <div className="size-5 absolute -bottom-1 -right-1 flex items-center justify-center rounded-md bg-primary/90 text-on-primary shadow-lg shadow-primary/40 backdrop-blur-sm border border-white/20 animate-in fade-in zoom-in duration-300">
+              <LumenSparkleIcon className="text-[10px]" />
             </div>
           )}
         </div>
@@ -102,6 +111,12 @@ export const BookCard: React.FC<BookCardProps> = ({
         {book.favorite && (
           <div className="size-8 absolute top-2 left-2 z-10 flex items-center justify-center rounded-md bg-black/60 text-yellow-400 backdrop-blur-md transition-colors hover:bg-black/80">
             <MdStar className="text-2xl" />
+          </div>
+        )}
+
+        {isIndexed && (
+          <div className="size-7 absolute bottom-10 right-2 z-10 flex items-center justify-center rounded-xl bg-primary/80 text-on-primary shadow-xl shadow-primary/30 backdrop-blur-md border border-white/20 animate-in fade-in zoom-in duration-500">
+            <LumenSparkleIcon className="text-lg" />
           </div>
         )}
 

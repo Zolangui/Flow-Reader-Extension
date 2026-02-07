@@ -36,7 +36,7 @@ export const NewHeader: React.FC<NewHeaderProps> = ({
           <div className="size-8">
             <img
               src="/icons/512.png"
-              alt="Lumen Read Logo"
+              alt={t('details.logo_alt')}
               className="h-8 w-8 object-contain transition-all duration-500"
               style={{ filter: `hue-rotate(${hueRotation})` }}
             />

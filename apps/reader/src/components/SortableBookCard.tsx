@@ -7,11 +7,13 @@ import { BookCard, BookCardProps } from './BookCard'
 interface SortableBookCardProps extends BookCardProps {
   id: string
   disabled?: boolean
+  isIndexed?: boolean
 }
 
 export const SortableBookCard: React.FC<SortableBookCardProps> = ({
   id,
   disabled,
+  isIndexed,
   ...props
 }) => {
   const {
@@ -34,7 +36,7 @@ export const SortableBookCard: React.FC<SortableBookCardProps> = ({
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <BookCard {...props} />
+      <BookCard {...props} isIndexed={isIndexed} />
       {/* Visual indicator for drag mode (optional, can be refined) */}
       {!disabled && (
         <div className="ring-primary/20 absolute inset-0 z-0 hidden rounded-xl ring-2 hover:block" />

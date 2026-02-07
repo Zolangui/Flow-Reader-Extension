@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import React from 'react'
 import { MdContentCopy } from 'react-icons/md'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json'
 import markdown from 'react-syntax-highlighter/dist/cjs/languages/prism/markdown'
@@ -64,6 +64,12 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content }) => {
             ) : (
                 <div className="markdown-body">
                     <ReactMarkdown
+                        urlTransform={(url) => {
+                            // Allow our custom cfi:// scheme for citation links
+                            if (url.startsWith('cfi://')) return url
+                            // Default behavior for other URLs (sanitizes javascript: etc)
+                            return defaultUrlTransform(url)
+                        }}
                         components={{
                             // ... existing components ...
                             // Style paragraphs to look like readable book text
@@ -131,7 +137,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ role, content }) => {
                             }
                         }}
                     >
-                        {content}
+                        {displayContent}
                     </ReactMarkdown>
                 </div>
             )}

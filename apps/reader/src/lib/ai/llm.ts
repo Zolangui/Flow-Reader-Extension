@@ -94,12 +94,12 @@ async function guardedCall<T>(fn: () => Promise<T>): Promise<T> {
     const now = Date.now()
     if (now < circuitOpenUntil) {
         const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
-        throw new Error(`Circuit Breaker Open: Quota exceeded. Please wait ${waitSec}s.`)
+        throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
     }
 
     const gateStatus = GLOBAL_RATE_GATE.canSendNow()
     if (!gateStatus.ok) {
-        throw new Error(`Rate Limit Exceeded (${gateStatus.reason}). Please slow down.`)
+        throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
     }
 
     try {
@@ -122,7 +122,14 @@ export class LLMService {
         this.settings = settings
     }
 
+    private ensureBaseUrl() {
+        if ((this.settings.provider === 'local' || this.settings.provider === 'custom') && !this.settings.baseUrl?.trim()) {
+            throw new Error('Base URL is required for local/custom providers.')
+        }
+    }
+
     private getModel() {
+        this.ensureBaseUrl()
         let modelName = this.settings.model
 
         if (this.settings.deepThink) {
@@ -195,7 +202,7 @@ ${effectivePrompt}`
                 return JSON.stringify(response.content)
             } catch (error) {
                 console.error('LLM Generation Error:', error)
-                throw new Error('Failed to generate response from AI provider.')
+                throw new Error('I18N_ERR:generation_failed')
             }
         })
     }
@@ -237,10 +244,10 @@ ${effectivePrompt}`
         const now = Date.now()
         if (now < circuitOpenUntil) {
             const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
-            throw new Error(`Circuit Breaker Open: Quota exceeded. Please wait ${waitSec}s.`)
+            throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
         }
         const gateStatus = GLOBAL_RATE_GATE.canSendNow()
-        if (!gateStatus.ok) throw new Error(`Rate Limit Exceeded (${gateStatus.reason}). Please slow down.`)
+        if (!gateStatus.ok) throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
 
         try {
             GLOBAL_RATE_GATE.markSent()
@@ -278,7 +285,7 @@ ${effectivePrompt}`
             if (errMsg.includes('429') || error.status === 429 || errMsg.includes('resource exhausted') || errMsg.includes('quota')) {
                 console.warn("429 Encountered in Stream. Opening Circuit Breaker.")
                 circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
-                message = "🚨 **Quota Exceeded (429):** You've reached your API limit. Please wait a minute or check your plan."
+                message = `I18N_ERR:circuit_breaker:${CIRCUIT_BACKOFF_MS / 1000}`
             }
 
             throw new Error(message)

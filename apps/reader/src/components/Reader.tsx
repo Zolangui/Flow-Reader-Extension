@@ -118,11 +118,11 @@ function ReaderGroup({ index }: ReaderGroupProps) {
           if (files.length) {
             tabs = await handleFiles(files)
           } else {
-            const text = e.dataTransfer.getData('text/plain')
+            const text = e.dataTransfer.getData('text/plain') || ''
             const fromTab = text.includes(',')
 
             if (fromTab) {
-              const indexes = text.split(',')
+              const indexes = String(text).split(',')
               const groupIdx = Number(indexes[0])
 
               if (index === groupIdx) {
@@ -208,13 +208,20 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   // v3.12: Semantic Jump Highlight Support
   useEffect(() => {
     const handle = (e: any) => {
-      const { cfi } = e.detail
-      if (active && tab.rendition) {
-        // Apply Cyan Glow highlight to referenced text
-        tab.rendition.annotations.add('highlight', cfi, {}, undefined, 'glow-highlight')
-        setTimeout(() => {
-          tab.rendition?.annotations.remove(cfi, 'highlight')
-        }, 5000)
+      const { cfi, content } = e.detail
+      console.log("[Reader UI] highlight-chunk event received:", { cfi, content: content?.substring(0, 50) });
+      if (active && tab.rendition && cfi) {
+        try {
+          // Apply Cyan Glow highlight to referenced text
+          tab.rendition.annotations.add('highlight', cfi, {}, undefined, 'glow-highlight')
+          setTimeout(() => {
+            try {
+              tab.rendition?.annotations.remove(cfi, 'highlight')
+            } catch { /* ignore removal errors */ }
+          }, 5000)
+        } catch (err) {
+          console.warn('[Reader] Failed to highlight chunk CFI:', err)
+        }
       }
     }
     window.addEventListener('reader-highlight-chunk', handle)
@@ -572,7 +579,8 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   useDisablePinchZooming(iframe)
 
   const parseTitle = (filename: string) => {
-    const parts = filename.split(' -- ')
+    if (!filename) return { title: 'Unknown', creator: undefined }
+    const parts = String(filename).split(' -- ')
     if (parts.length >= 2) {
       return { title: parts[0], creator: parts[1] }
     }

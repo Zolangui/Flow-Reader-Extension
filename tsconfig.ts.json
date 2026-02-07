@@ -4,7 +4,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "lib": ["esnext"],
-    "module": "ESNext",
+    "module": "NodeNext",
     "target": "ES6"
   }
 }

@@ -17,6 +17,7 @@ const withTM = require('next-transpile-modules')([
   '@flow/epubjs',
   '@material/material-color-utilities',
   'voy-search',
+  '@wllama/wllama',
 ])
 
 const IS_DEV = process.env.NODE_ENV === 'development'
@@ -86,7 +87,7 @@ let config = {
 
 if (!IS_EXPORT) {
   config.i18n = {
-    locales: ['en-US', 'zh-CN', 'ja-JP'],
+    locales: ['en-US', 'pt-BR', 'es-ES', 'fr-FR', 'de-DE', 'zh-CN', 'ja-JP'],
     defaultLocale: 'en-US',
   }
 } else {

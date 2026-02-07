@@ -141,13 +141,13 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                 <div className="flex justify-between">
                   <span>{t('details.size')}</span>
                   <span className="text-text-light dark:text-text-dark font-medium">
-                    {sizeMb} MB
+                    {t('details.mb', { size: sizeMb })}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>{t('details.format')}</span>
                   <span className="text-text-light dark:text-text-dark font-medium">
-                    EPUB
+                    {t('details.epub_format')}
                   </span>
                 </div>
                 {language && (

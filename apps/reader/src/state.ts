@@ -95,6 +95,7 @@ export interface ChatbotMeta {
   lastDepth?: 'short' | 'balanced' | 'deep'
   lastScope?: 'book_only' | 'book_plus_discussion'
   lastQuery?: string
+  lastEffectiveQuery?: string
   lastWasDeeper?: boolean
 }
 
@@ -116,6 +117,7 @@ const defaultChatbotMeta: ChatbotMeta = {
   canSearchDeeper: false,
   lastHadContext: true,
   lastLanguage: 'en',
+  lastEffectiveQuery: '',
   lastWasDeeper: false,
 }
 
