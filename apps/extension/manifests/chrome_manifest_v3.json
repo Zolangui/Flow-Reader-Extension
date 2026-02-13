@@ -43,7 +43,6 @@
         "fastText/models/language-identification/common.mjs",
         "fastText/models/language-identification/base.mjs",
         "fastText/models/language-identification/assets/languages.json.mjs",
-        "fastText/models/language-identification/assets/lid.176.ftz",
         "wasm/ort-wasm.wasm",
         "wasm/ort-wasm-threaded.wasm",
         "wasm/ort-wasm-simd.wasm",
