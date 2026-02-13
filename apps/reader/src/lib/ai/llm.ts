@@ -1,7 +1,14 @@
 import { ChatAnthropic } from '@langchain/anthropic'
-import { AIMessage, HumanMessage, SystemMessage, BaseMessage } from '@langchain/core/messages'
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  BaseMessage,
+} from '@langchain/core/messages'
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { ChatOpenAI } from '@langchain/openai'
+
+import { sanitizeErrorForLogs } from '../security/redact'
 
 import { AISettings } from './config'
 
@@ -9,8 +16,8 @@ import { AISettings } from './config'
  * Chat message format for conversation history
  */
 export interface ChatHistoryMessage {
-    role: 'user' | 'assistant'
-    content: string
+  role: 'user' | 'assistant'
+  content: string
 }
 
 /**
@@ -19,64 +26,70 @@ export interface ChatHistoryMessage {
  * Shared globally across all LLMService instances.
  */
 class RateGate {
-    private minuteWindow: number[] = []
-    private dayCount = 0
-    private dayKey = this.todayKey()
+  private minuteWindow: number[] = []
+  private dayCount = 0
+  private dayKey = this.todayKey()
 
-    constructor(private rpmLimit: number, private rpdLimit: number) {
-        // Load persisted daily usage if available
-        if (typeof localStorage !== 'undefined') {
-            const saved = localStorage.getItem('llm_daily_usage')
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved)
-                    if (parsed.key === this.dayKey) {
-                        this.dayCount = parsed.count
-                    }
-                } catch { }
-            }
-        }
+  constructor(private rpmLimit: number, private rpdLimit: number) {
+    // Load persisted daily usage if available
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('llm_daily_usage')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (parsed.key === this.dayKey) {
+            this.dayCount = parsed.count
+          }
+        } catch {}
+      }
     }
+  }
 
-    private todayKey() {
-        const d = new Date()
-        return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`
+  private todayKey() {
+    const d = new Date()
+    return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`
+  }
+
+  private rotateDayIfNeeded() {
+    const k = this.todayKey()
+    if (k !== this.dayKey) {
+      this.dayKey = k
+      this.dayCount = 0
+      this.persist()
     }
+  }
 
-    private rotateDayIfNeeded() {
-        const k = this.todayKey()
-        if (k !== this.dayKey) {
-            this.dayKey = k
-            this.dayCount = 0
-            this.persist()
-        }
+  private persist() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(
+        'llm_daily_usage',
+        JSON.stringify({ key: this.dayKey, count: this.dayCount }),
+      )
     }
+  }
 
-    private persist() {
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('llm_daily_usage', JSON.stringify({ key: this.dayKey, count: this.dayCount }))
-        }
+  canSendNow() {
+    this.rotateDayIfNeeded()
+
+    const now = Date.now()
+    // Filter requests older than 1 minute
+    this.minuteWindow = this.minuteWindow.filter((t) => now - t < 60_000)
+
+    const rpmOk = this.minuteWindow.length < this.rpmLimit
+    const rpdOk = this.dayCount < this.rpdLimit
+
+    return {
+      ok: rpmOk && rpdOk,
+      reason: !rpmOk ? 'RPM' : !rpdOk ? 'RPD' : null,
     }
+  }
 
-    canSendNow() {
-        this.rotateDayIfNeeded()
-
-        const now = Date.now()
-        // Filter requests older than 1 minute
-        this.minuteWindow = this.minuteWindow.filter(t => now - t < 60_000)
-
-        const rpmOk = this.minuteWindow.length < this.rpmLimit
-        const rpdOk = this.dayCount < this.rpdLimit
-
-        return { ok: rpmOk && rpdOk, reason: !rpmOk ? 'RPM' : !rpdOk ? 'RPD' : null }
-    }
-
-    markSent() {
-        this.rotateDayIfNeeded()
-        this.minuteWindow.push(Date.now())
-        this.dayCount++
-        this.persist()
-    }
+  markSent() {
+    this.rotateDayIfNeeded()
+    this.minuteWindow.push(Date.now())
+    this.dayCount++
+    this.persist()
+  }
 }
 
 // Global Gate: 15 RPM, 1500 RPD (Conservative free tier defaults)
@@ -91,209 +104,254 @@ let circuitOpenUntil = 0
 const CIRCUIT_BACKOFF_MS = 60_000 // 1 minute penalty
 
 async function guardedCall<T>(fn: () => Promise<T>): Promise<T> {
-    const now = Date.now()
-    if (now < circuitOpenUntil) {
-        const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
-        throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
-    }
+  const now = Date.now()
+  if (now < circuitOpenUntil) {
+    const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
+    throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
+  }
 
-    const gateStatus = GLOBAL_RATE_GATE.canSendNow()
-    if (!gateStatus.ok) {
-        throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
-    }
+  const gateStatus = GLOBAL_RATE_GATE.canSendNow()
+  if (!gateStatus.ok) {
+    throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
+  }
 
-    try {
-        GLOBAL_RATE_GATE.markSent()
-        return await fn()
-    } catch (e: any) {
-        const msg = String(e?.message || e)
-        if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("resource exhausted")) {
-            console.warn("429 Encountered. Opening Circuit Breaker.")
-            circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
-        }
-        throw e
+  try {
+    GLOBAL_RATE_GATE.markSent()
+    return await fn()
+  } catch (e: any) {
+    const msg = String(e?.message || e)
+    if (
+      msg.includes('429') ||
+      msg.toLowerCase().includes('quota') ||
+      msg.toLowerCase().includes('resource exhausted')
+    ) {
+      console.warn('429 Encountered. Opening Circuit Breaker.')
+      circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
     }
+    throw e
+  }
 }
 
 export class LLMService {
-    private settings: AISettings
+  private settings: AISettings
 
-    constructor(settings: AISettings) {
-        this.settings = settings
+  constructor(settings: AISettings) {
+    this.settings = settings
+  }
+
+  private ensureProviderConfiguration() {
+    const provider = this.settings.provider
+    const apiKey = this.settings.apiKey?.trim()
+    const baseUrl = this.settings.baseUrl?.trim()
+
+    if ((provider === 'local' || provider === 'custom') && !baseUrl) {
+      throw new Error('Base URL is required for local/custom providers.')
     }
 
-    private ensureBaseUrl() {
-        if ((this.settings.provider === 'local' || this.settings.provider === 'custom') && !this.settings.baseUrl?.trim()) {
-            throw new Error('Base URL is required for local/custom providers.')
-        }
+    if (provider !== 'local' && !apiKey) {
+      throw new Error('API Key is missing')
+    }
+  }
+
+  private getModel() {
+    this.ensureProviderConfiguration()
+    let modelName = this.settings.model
+
+    if (this.settings.deepThink) {
+      if (
+        this.settings.provider === 'openai' &&
+        (!modelName || modelName.includes('gpt-4o'))
+      ) {
+        modelName = 'o1-preview'
+      } else if (
+        this.settings.provider === 'gemini' &&
+        (!modelName || modelName.includes('gemini-1.5'))
+      ) {
+        modelName = 'gemini-1.5-pro'
+      } else if (
+        this.settings.provider === 'anthropic' &&
+        (!modelName || modelName.includes('claude-3'))
+      ) {
+        modelName = 'claude-3-5-sonnet-latest'
+      }
     }
 
-    private getModel() {
-        this.ensureBaseUrl()
-        let modelName = this.settings.model
+    if (
+      this.settings.provider === 'openai' ||
+      this.settings.provider === 'local' ||
+      this.settings.provider === 'custom'
+    ) {
+      const isOpenAIProvider = this.settings.provider === 'openai'
+      const modelConfig = {
+        apiKey:
+          this.settings.provider === 'local'
+            ? this.settings.apiKey || 'not-needed'
+            : this.settings.apiKey,
+        modelName:
+          modelName || (isOpenAIProvider ? 'gpt-4o-mini' : 'local-model'),
+        temperature: this.settings.temperature,
+      }
 
-        if (this.settings.deepThink) {
-            if (this.settings.provider === 'openai' && (!modelName || modelName.includes('gpt-4o'))) {
-                modelName = 'o1-preview'
-            } else if (this.settings.provider === 'gemini' && (!modelName || modelName.includes('gemini-1.5'))) {
-                modelName = 'gemini-1.5-pro'
-            } else if (this.settings.provider === 'anthropic' && (!modelName || modelName.includes('claude-3'))) {
-                modelName = 'claude-3-5-sonnet-latest'
-            }
-        }
+      return new ChatOpenAI({
+        ...modelConfig,
+        // Keep official OpenAI endpoint for "openai" provider.
+        ...(isOpenAIProvider
+          ? {}
+          : {
+              configuration: {
+                baseURL: this.settings.baseUrl?.trim(),
+              },
+            }),
+      })
+    } else if (this.settings.provider === 'gemini') {
+      return new ChatGoogleGenerativeAI({
+        apiKey: this.settings.apiKey,
+        model: modelName || 'gemini-1.5-flash',
+        maxOutputTokens: 2048,
+        temperature: this.settings.temperature,
+      })
+    } else if (this.settings.provider === 'anthropic') {
+      return new ChatAnthropic({
+        anthropicApiKey: this.settings.apiKey,
+        modelName: modelName || 'claude-3-5-haiku-latest',
+        temperature: this.settings.temperature,
+      })
+    }
+    throw new Error('Unsupported provider')
+  }
 
-        if (this.settings.provider === 'openai' || this.settings.provider === 'local' || this.settings.provider === 'custom') {
-            return new ChatOpenAI({
-                apiKey: this.settings.provider === 'openai' ? this.settings.apiKey : (this.settings.apiKey || 'not-needed'),
-                modelName: modelName || (this.settings.provider === 'openai' ? 'gpt-4o-mini' : 'local-model'),
-                temperature: this.settings.temperature,
-                configuration: {
-                    baseURL: this.settings.baseUrl
-                }
-            })
-        } else if (this.settings.provider === 'gemini') {
-            return new ChatGoogleGenerativeAI({
-                apiKey: this.settings.apiKey,
-                model: modelName || 'gemini-1.5-flash',
-                maxOutputTokens: 2048,
-                temperature: this.settings.temperature,
-            })
-        } else if (this.settings.provider === 'anthropic') {
-            return new ChatAnthropic({
-                anthropicApiKey: this.settings.apiKey,
-                modelName: modelName || 'claude-3-5-haiku-latest',
-                temperature: this.settings.temperature,
-            })
-        }
-        throw new Error('Unsupported provider')
+  async generateResponse(
+    systemPrompt: string,
+    userQuery: string,
+    history: ChatHistoryMessage[] = [],
+  ): Promise<string> {
+    if (!this.settings.apiKey && this.settings.provider !== 'local') {
+      throw new Error('API Key is missing')
     }
 
-    async generateResponse(
-        systemPrompt: string,
-        userQuery: string,
-        history: ChatHistoryMessage[] = []
-    ): Promise<string> {
-        if (!this.settings.apiKey && !['local', 'custom'].includes(this.settings.provider)) {
-            throw new Error('API Key is missing')
-        }
-
-        let effectivePrompt = systemPrompt
-        if (this.settings.deepThink) {
-            effectivePrompt = `[SYSTEM: ADVANCED REASONING MODE ACTIVE]
+    let effectivePrompt = systemPrompt
+    if (this.settings.deepThink) {
+      effectivePrompt = `[SYSTEM: ADVANCED REASONING MODE ACTIVE]
 - Think step-by-step privately.
 - Output ONLY the final answer.
 - Add a short "Rationale" section with 2-4 bullets (no hidden chain-of-thought).
 
 ${effectivePrompt}`
-        }
-
-        return guardedCall(async () => {
-            try {
-                const model = this.getModel()
-                const response = await model.invoke([
-                    new SystemMessage(effectivePrompt),
-                    ...this.historyToMessages(history),
-                    new HumanMessage(userQuery),
-                ])
-
-                if (typeof response.content === 'string') {
-                    return response.content
-                }
-                return JSON.stringify(response.content)
-            } catch (error) {
-                console.error('LLM Generation Error:', error)
-                throw new Error('I18N_ERR:generation_failed')
-            }
-        })
     }
 
-    /**
-     * Converts chat history to LangChain message format
-     */
-    private historyToMessages(history: ChatHistoryMessage[]): BaseMessage[] {
-        return history.map(msg =>
-            msg.role === 'user'
-                ? new HumanMessage(msg.content)
-                : new AIMessage(msg.content)
-        )
-    }
-
-    async *streamResponse(
-        systemPrompt: string,
-        userQuery: string,
-        signal?: AbortSignal,
-        history?: ChatHistoryMessage[]
-    ): AsyncGenerator<string, void, unknown> {
-        if (!this.settings.apiKey && !['local', 'custom'].includes(this.settings.provider)) {
-            throw new Error('API Key is missing')
-        }
-
-        let effectivePrompt = systemPrompt
-        if (this.settings.deepThink) {
-            effectivePrompt = `[SYSTEM: ADVANCED REASONING MODE ACTIVE]
-- Think step-by-step privately.
-- Output ONLY the final answer.
-- Add a short "Rationale" section with 2-4 bullets (no hidden chain-of-thought).
-
-${effectivePrompt}`
-        }
-
+    return guardedCall(async () => {
+      try {
         const model = this.getModel()
+        const response = await model.invoke([
+          new SystemMessage(effectivePrompt),
+          ...this.historyToMessages(history),
+          new HumanMessage(userQuery),
+        ])
 
-        // We can't easily wrap a generator in guardedCall, so we manually check
-        const now = Date.now()
-        if (now < circuitOpenUntil) {
-            const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
-            throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
+        if (typeof response.content === 'string') {
+          return response.content
         }
-        const gateStatus = GLOBAL_RATE_GATE.canSendNow()
-        if (!gateStatus.ok) throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
+        return JSON.stringify(response.content)
+      } catch (error) {
+        console.error('LLM Generation Error:', sanitizeErrorForLogs(error))
+        throw new Error('I18N_ERR:generation_failed')
+      }
+    })
+  }
 
-        try {
-            GLOBAL_RATE_GATE.markSent()
+  /**
+   * Converts chat history to LangChain message format
+   */
+  private historyToMessages(history: ChatHistoryMessage[]): BaseMessage[] {
+    return history.map((msg) =>
+      msg.role === 'user'
+        ? new HumanMessage(msg.content)
+        : new AIMessage(msg.content),
+    )
+  }
 
-            // Build messages array with optional history
-            const messages: BaseMessage[] = [new SystemMessage(effectivePrompt)]
-
-            // Add conversation history (limited to last N turns to control context size)
-            if (history && history.length > 0) {
-                // Keep last 6 messages (3 turns) to balance context vs tokens
-                const recentHistory = history.slice(-6)
-                messages.push(...this.historyToMessages(recentHistory))
-            }
-
-            // Add current user query
-            messages.push(new HumanMessage(userQuery))
-
-            const stream = await model.stream(messages, { signal })
-
-            for await (const chunk of stream) {
-                if (typeof chunk.content === 'string') {
-                    yield chunk.content
-                }
-            }
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log('Stream aborted')
-                return
-            }
-            console.error('LLM Streaming Error:', error)
-
-            let message = 'Failed to stream response.'
-            const errMsg = String(error?.message || error).toLowerCase()
-
-            if (errMsg.includes('429') || error.status === 429 || errMsg.includes('resource exhausted') || errMsg.includes('quota')) {
-                console.warn("429 Encountered in Stream. Opening Circuit Breaker.")
-                circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
-                message = `I18N_ERR:circuit_breaker:${CIRCUIT_BACKOFF_MS / 1000}`
-            }
-
-            throw new Error(message)
-        }
+  async *streamResponse(
+    systemPrompt: string,
+    userQuery: string,
+    signal?: AbortSignal,
+    history?: ChatHistoryMessage[],
+  ): AsyncGenerator<string, void, unknown> {
+    if (!this.settings.apiKey && this.settings.provider !== 'local') {
+      throw new Error('API Key is missing')
     }
 
-    async classifyBook(metadata: any): Promise<string> {
-        const prompt = `Analyze this book metadata and choose the most appropriate AI persona from: 
+    let effectivePrompt = systemPrompt
+    if (this.settings.deepThink) {
+      effectivePrompt = `[SYSTEM: ADVANCED REASONING MODE ACTIVE]
+- Think step-by-step privately.
+- Output ONLY the final answer.
+- Add a short "Rationale" section with 2-4 bullets (no hidden chain-of-thought).
+
+${effectivePrompt}`
+    }
+
+    const model = this.getModel()
+
+    // We can't easily wrap a generator in guardedCall, so we manually check
+    const now = Date.now()
+    if (now < circuitOpenUntil) {
+      const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
+      throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
+    }
+    const gateStatus = GLOBAL_RATE_GATE.canSendNow()
+    if (!gateStatus.ok)
+      throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
+
+    try {
+      GLOBAL_RATE_GATE.markSent()
+
+      // Build messages array with optional history
+      const messages: BaseMessage[] = [new SystemMessage(effectivePrompt)]
+
+      // Add conversation history (limited to last N turns to control context size)
+      if (history && history.length > 0) {
+        // Keep last 6 messages (3 turns) to balance context vs tokens
+        const recentHistory = history.slice(-6)
+        messages.push(...this.historyToMessages(recentHistory))
+      }
+
+      // Add current user query
+      messages.push(new HumanMessage(userQuery))
+
+      const stream = await model.stream(messages, { signal })
+
+      for await (const chunk of stream) {
+        if (typeof chunk.content === 'string') {
+          yield chunk.content
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Stream aborted')
+        return
+      }
+      console.error('LLM Streaming Error:', sanitizeErrorForLogs(error))
+
+      let message = 'Failed to stream response.'
+      const errMsg = String(error?.message || error).toLowerCase()
+
+      if (
+        errMsg.includes('429') ||
+        error.status === 429 ||
+        errMsg.includes('resource exhausted') ||
+        errMsg.includes('quota')
+      ) {
+        console.warn('429 Encountered in Stream. Opening Circuit Breaker.')
+        circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
+        message = `I18N_ERR:circuit_breaker:${CIRCUIT_BACKOFF_MS / 1000}`
+      }
+
+      throw new Error(message)
+    }
+  }
+
+  async classifyBook(metadata: any): Promise<string> {
+    const prompt = `Analyze this book metadata and choose the most appropriate AI persona from: 
         "Literary Critic" (for novels/poetry), 
         "Technical Expert" (for coding/engineering), 
         "Academic Researcher" (for science/history/essays), 
@@ -308,18 +366,20 @@ ${effectivePrompt}`
         
         Return ONLY the name of the persona.`
 
-        return guardedCall(async () => {
-            try {
-                const model = this.getModel()
-                const response = await model.invoke([
-                    new SystemMessage("You are a metadata classifier."),
-                    new HumanMessage(prompt),
-                ])
-                return typeof response.content === 'string' ? response.content.trim() : "Helpful Assistant"
-            } catch (e) {
-                console.error('Classification Error:', e)
-                return "Helpful Assistant"
-            }
-        })
-    }
+    return guardedCall(async () => {
+      try {
+        const model = this.getModel()
+        const response = await model.invoke([
+          new SystemMessage('You are a metadata classifier.'),
+          new HumanMessage(prompt),
+        ])
+        return typeof response.content === 'string'
+          ? response.content.trim()
+          : 'Helpful Assistant'
+      } catch (e) {
+        console.error('Classification Error:', sanitizeErrorForLogs(e))
+        return 'Helpful Assistant'
+      }
+    })
+  }
 }

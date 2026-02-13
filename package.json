@@ -14,6 +14,7 @@
     "package:chrome": "pnpm build:ext:chrome:prod && cd apps/extension/dist && bestzip ../../Lumen-chrome.zip *",
     "package:firefox": "pnpm build:ext:firefox:prod && cd apps/extension/dist && bestzip ../../Lumen-firefox.zip *",
     "benchmark:rag:report": "node scripts/rag-benchmark-report.mjs",
+    "verify:providers": "cross-env TS_NODE_PROJECT=scripts/tsconfig.esno.json esno scripts/verify-providers.ts",
     "release": "pnpm -r publish --access public",
     "prepare": "husky install"
   },

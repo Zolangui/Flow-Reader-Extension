@@ -31,9 +31,11 @@ import {
 } from '../lib/ai/language'
 import { RAGService } from '../lib/ai/rag'
 import { getSlmStatus, getSlmWarning, preloadSlm } from '../lib/ai/rewriter'
+import { sanitizeErrorForLogs } from '../lib/security/redact'
 import { reader } from '../models'
 import {
   defaultAIConfig,
+  type AIProvider,
   useAISettings,
   useChatbotState,
   useSettings,
@@ -140,6 +142,24 @@ interface SelectOption {
 interface SelectGroup {
   label: string
   options: SelectOption[]
+}
+
+interface ModelCacheEntry {
+  fetchedAt: number
+  groups: SelectGroup[]
+}
+
+const MODEL_FETCH_CACHE_TTL_MS = 10 * 60 * 1000
+const MODEL_FETCH_CACHE = new Map<string, ModelCacheEntry>()
+
+function buildModelCacheKey(provider: AIProvider, apiKey: string): string {
+  const trimmed = apiKey.trim()
+  if (!trimmed) return provider
+  const keyFingerprint = `${trimmed.length}:${trimmed.slice(
+    0,
+    4,
+  )}:${trimmed.slice(-2)}`
+  return `${provider}:${keyFingerprint}`
 }
 
 interface PremiumSelectProps {
@@ -462,6 +482,36 @@ export const AISettingsPanel: React.FC<{
   onClose: () => void
   isSetup?: boolean
 }> = ({ className, onClose, isSetup }) => {
+  const getDefaultModelForProvider = React.useCallback(
+    (provider: AIProvider) => {
+      if (provider === 'openai') return 'gpt-4o-mini'
+      if (provider === 'anthropic') return 'claude-3-5-haiku-latest'
+      if (provider === 'gemini') return 'gemini-1.5-flash'
+      if (provider === 'local') return 'local-model'
+      return 'gpt-4o-mini'
+    },
+    [],
+  )
+
+  const isModelCompatibleWithProvider = React.useCallback(
+    (provider: AIProvider, model: string) => {
+      const normalized = (model || '').trim().toLowerCase()
+      if (!normalized) return false
+      if (provider === 'openai')
+        return (
+          normalized.startsWith('gpt') ||
+          normalized.startsWith('o1') ||
+          normalized.startsWith('o3')
+        )
+      if (provider === 'gemini') return normalized.startsWith('gemini')
+      if (provider === 'anthropic') return normalized.startsWith('claude')
+      if (provider === 'local')
+        return !/^(gpt|o1|o3|gemini|claude)/i.test(normalized)
+      return true
+    },
+    [],
+  )
+
   const [settings, setSettings] = useAISettings()
   const [appSettings] = useSettings()
   const [, setChatState] = useChatbotState()
@@ -470,6 +520,7 @@ export const AISettingsPanel: React.FC<{
 
   const [loadingModels, setLoadingModels] = useState(false)
   const [availableModels, setAvailableModels] = useState<SelectGroup[]>([])
+  const modelFetchAbortRef = React.useRef<AbortController | null>(null)
   const [slmStatus, setSlmStatus] = useState<ReturnType<typeof getSlmStatus>>(
     getSlmStatus(),
   )
@@ -545,6 +596,8 @@ export const AISettingsPanel: React.FC<{
     isMounted.current = true
     return () => {
       isMounted.current = false
+      modelFetchAbortRef.current?.abort()
+      modelFetchAbortRef.current = null
     }
   }, [])
 
@@ -671,13 +724,43 @@ export const AISettingsPanel: React.FC<{
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleProviderChange = (nextProvider: AIProvider) => {
+    setSettings((prev) => {
+      const providerChanged = prev.provider !== nextProvider
+      const next = { ...prev, provider: nextProvider }
+
+      // Prevent stale local/custom endpoint from leaking into hosted providers.
+      if (
+        nextProvider === 'openai' ||
+        nextProvider === 'gemini' ||
+        nextProvider === 'anthropic'
+      ) {
+        next.baseUrl = ''
+      }
+
+      if (providerChanged) {
+        const currentModel = prev.model || ''
+        if (!isModelCompatibleWithProvider(nextProvider, currentModel)) {
+          next.model = getDefaultModelForProvider(nextProvider)
+        }
+      }
+
+      return next
+    })
+    setAvailableModels([])
+  }
+
   const resetDefaults = () => {
     if (confirm(t('confirm_reset'))) {
       setSettings((prev) => ({
         ...defaultAIConfig,
         apiKey: prev.apiKey,
-        baseUrl: prev.baseUrl,
         provider: prev.provider,
+        model: getDefaultModelForProvider(prev.provider),
+        baseUrl:
+          prev.provider === 'local' || prev.provider === 'custom'
+            ? prev.baseUrl
+            : '',
       }))
     }
   }
@@ -753,259 +836,291 @@ export const AISettingsPanel: React.FC<{
     void runReindexBook(bookId)
   }
 
-  const fetchModels = React.useCallback(async () => {
-    if (!settings.apiKey) return alert(t('settings.enter_api_key_first'))
-    setLoadingModels(true)
-    setAvailableModels([])
+  const fetchModels = React.useCallback(
+    async (options?: { force?: boolean }) => {
+      const force = options?.force === true
+      if (!settings.apiKey) return alert(t('settings.enter_api_key_first'))
 
-    try {
-      let groups: SelectGroup[] = []
-
-      if (settings.provider === 'gemini') {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models`,
-          {
-            headers: { 'x-goog-api-key': settings.apiKey },
-          },
-        )
-        if (!res.ok) throw new Error('Failed to fetch from Google')
-        const data = await res.json()
-
-        const blacklist =
-          /(gemma|deep-research|computer-use|vision|aqa|embedding|imaging|imagen|image|text-|translator|metadata|attr|realtime|audio|instruct|nano|bison|gecko|tts|speech|sound|media)/i
-
-        // 1. Initial Metadata Filter
-        const candidates = data.models.filter((m: any) => {
-          const methods = m.supportedGenerationMethods || []
-          const name = m.name.toLowerCase()
-          return methods.includes('generateContent') && !blacklist.test(name)
-        })
-
-        // 2. Zero-Cost Verification (Parallel countTokens ping)
-        // This filters out "ghost" models (like Gemma/Imagen) that appear in list_models
-        // but return 403 Forbidden when accessed without specific billing/permissions.
-        const verificationResults = await Promise.allSettled(
-          candidates.map(async (m: any) => {
-            try {
-              // Use countTokens as a lightweight "ping". It's free and fast.
-              // If this fails (403/404), the user definitely can't use the model.
-              const verifyRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/${m.name}:countTokens`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-key': settings.apiKey,
-                  },
-                  body: JSON.stringify({
-                    contents: [{ parts: [{ text: '' }] }],
-                  }),
-                },
-              )
-              if (!verifyRes.ok) throw new Error('Access Denied')
-              return m
-            } catch (e) {
-              return null
-            }
-          }),
-        )
-
-        const filtered = verificationResults
-          .map((r) => (r.status === 'fulfilled' ? r.value : null))
-          .filter((m): m is any => m !== null)
-
-        const powerhouse: SelectOption[] = []
-        const reasoning: SelectOption[] = []
-        const fast: SelectOption[] = []
-        const experimental: SelectOption[] = []
-
-        filtered.forEach((m: any) => {
-          const id = m.name.replace('models/', '')
-          const lowerId = id.toLowerCase()
-          const option: SelectOption = {
-            value: id,
-            label: id,
-            icon: <GeminiIcon />,
-          }
-
-          // Priority-based categorization
-
-          // 1. Reasoning (Chain of Thought)
-          if (
-            lowerId.includes('deep-think') ||
-            lowerId.includes('thinking') ||
-            lowerId.startsWith('o1') ||
-            lowerId.startsWith('o3')
-          ) {
-            reasoning.push(option)
-          }
-          // 2. Powerhouse (Frontier Intelligence)
-          // Includes Gemini 2.5+, 3.0, Ultra
-          else if (
-            lowerId.includes('gemini-3') ||
-            lowerId.includes('gemini-2.5') ||
-            lowerId.includes('ultra')
-          ) {
-            powerhouse.push(option)
-          }
-          // 3. Fast / Efficient (Includes Legacy Frontier)
-          // Includes 1.5 Pro, Flash, Mini, GPT-4
-          else if (
-            lowerId.includes('flash') ||
-            lowerId.includes('mini') ||
-            lowerId.includes('haiku') ||
-            lowerId.includes('pro') ||
-            lowerId.includes('gpt-4')
-          ) {
-            fast.push(option)
-          }
-          // 4. Other
-          else {
-            experimental.push(option)
-          }
-        })
-
-        groups = [
-          {
-            label: `🧠 ${t('settings.model_category.reasoning')}`,
-            options: reasoning.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `💪 ${t('settings.model_category.powerhouse')}`,
-            options: powerhouse.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `⚡ ${t('settings.model_category.fast')}`,
-            options: fast.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `🧪 ${t('settings.model_category.other')}`,
-            options: experimental.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-        ].filter((g) => g.options.length > 0)
-      } else if (settings.provider === 'openai') {
-        const res = await fetch('https://api.openai.com/v1/models', {
-          headers: { Authorization: `Bearer ${settings.apiKey}` },
-        })
-        if (!res.ok) throw new Error('Failed to fetch from OpenAI')
-        const data = await res.json()
-
-        const blacklist =
-          /(audio|realtime|instruct|vision|embedding|dall-e|tts|whisper)/i
-        const filtered = data.data.filter((m: any) => {
-          const id = m.id.toLowerCase()
-          return (
-            (id.startsWith('gpt') ||
-              id.startsWith('o1') ||
-              id.startsWith('o3')) &&
-            !blacklist.test(id)
-          )
-        })
-
-        const powerhouse: SelectOption[] = []
-        const reasoning: SelectOption[] = []
-        const fast: SelectOption[] = []
-        const experimental: SelectOption[] = []
-
-        filtered.forEach((m: any) => {
-          const id = m.id
-          const lowerId = id.toLowerCase()
-          const option: SelectOption = {
-            value: id,
-            label: id,
-            icon: <OpenAIIcon />,
-          }
-
-          if (lowerId.startsWith('o1') || lowerId.startsWith('o3')) {
-            reasoning.push(option)
-          } else if (lowerId.includes('gpt-5')) {
-            powerhouse.push(option)
-          } else if (lowerId.includes('gpt-4')) {
-            // Per user, GPT-4 is now "outdated" / efficient compared to GPT-5
-            fast.push(option)
-          } else if (lowerId.includes('mini')) {
-            fast.push(option)
-          } else {
-            experimental.push(option)
-          }
-        })
-
-        groups = [
-          {
-            label: `🧠 ${t('settings.model_category.reasoning')}`,
-            options: reasoning.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `💪 ${t('settings.model_category.powerhouse')}`,
-            options: powerhouse.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `⚡ ${t('settings.model_category.fast')}`,
-            options: fast.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-          {
-            label: `🧪 ${t('settings.model_category.other')}`,
-            options: experimental.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-        ].filter((g) => g.options.length > 0)
-      } else if (settings.provider === 'anthropic') {
-        const res = await fetch('https://api.anthropic.com/v1/models', {
-          headers: {
-            'x-api-key': settings.apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-        })
-        if (!res.ok) throw new Error('Failed to fetch from Anthropic')
-        const data = await res.json()
-
-        const options = data.data.map((m: any) => ({
-          value: m.id,
-          label: m.id,
-          icon: <AnthropicIcon />,
-        }))
-
-        groups = [
-          {
-            label: t('settings.claude_series'),
-            options: options.sort((a, b) =>
-              b.value.localeCompare(a.value, undefined, { numeric: true }),
-            ),
-          },
-        ]
+      const cacheKey = buildModelCacheKey(settings.provider, settings.apiKey)
+      if (!force) {
+        const cached = MODEL_FETCH_CACHE.get(cacheKey)
+        const isFresh =
+          cached && Date.now() - cached.fetchedAt < MODEL_FETCH_CACHE_TTL_MS
+        if (isFresh && cached) {
+          setAvailableModels(cached.groups)
+          return
+        }
       }
 
-      setAvailableModels(groups)
-    } catch (e) {
-      alert(t('settings.fetch_models_error'))
-      console.error(e)
-    } finally {
-      setLoadingModels(false)
-    }
-  }, [settings.apiKey, settings.provider, t])
+      modelFetchAbortRef.current?.abort()
+      const abortController = new AbortController()
+      modelFetchAbortRef.current = abortController
+
+      setLoadingModels(true)
+      setAvailableModels([])
+
+      try {
+        let groups: SelectGroup[] = []
+
+        if (settings.provider === 'gemini') {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models`,
+            {
+              headers: { 'x-goog-api-key': settings.apiKey },
+              signal: abortController.signal,
+            },
+          )
+          if (!res.ok) throw new Error('Failed to fetch from Google')
+          const data = await res.json()
+
+          const blacklist =
+            /(gemma|deep-research|computer-use|vision|aqa|embedding|imaging|imagen|image|text-|translator|metadata|attr|realtime|audio|instruct|nano|bison|gecko|tts|speech|sound|media)/i
+
+          // 1. Initial Metadata Filter
+          const candidates = data.models.filter((m: any) => {
+            const methods = m.supportedGenerationMethods || []
+            const name = m.name.toLowerCase()
+            return methods.includes('generateContent') && !blacklist.test(name)
+          })
+
+          // Optional strict verification:
+          // - Auto load: metadata-only (fast, no request storm).
+          // - Manual refresh: verify accessibility via countTokens.
+          let filtered = candidates
+          if (force) {
+            const verificationResults = await Promise.allSettled(
+              candidates.map(async (m: any) => {
+                const verifyRes = await fetch(
+                  `https://generativelanguage.googleapis.com/v1beta/${m.name}:countTokens`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-goog-api-key': settings.apiKey,
+                    },
+                    body: JSON.stringify({
+                      contents: [{ parts: [{ text: '' }] }],
+                    }),
+                    signal: abortController.signal,
+                  },
+                )
+                if (!verifyRes.ok) throw new Error('Access Denied')
+                return m
+              }),
+            )
+
+            filtered = verificationResults
+              .map((r) => (r.status === 'fulfilled' ? r.value : null))
+              .filter((m): m is any => m !== null)
+          }
+
+          const powerhouse: SelectOption[] = []
+          const reasoning: SelectOption[] = []
+          const fast: SelectOption[] = []
+          const experimental: SelectOption[] = []
+
+          filtered.forEach((m: any) => {
+            const id = m.name.replace('models/', '')
+            const lowerId = id.toLowerCase()
+            const option: SelectOption = {
+              value: id,
+              label: id,
+              icon: <GeminiIcon />,
+            }
+
+            // Priority-based categorization
+
+            // 1. Reasoning (Chain of Thought)
+            if (
+              lowerId.includes('deep-think') ||
+              lowerId.includes('thinking') ||
+              lowerId.startsWith('o1') ||
+              lowerId.startsWith('o3')
+            ) {
+              reasoning.push(option)
+            }
+            // 2. Powerhouse (Frontier Intelligence)
+            // Includes Gemini 2.5+, 3.0, Ultra
+            else if (
+              lowerId.includes('gemini-3') ||
+              lowerId.includes('gemini-2.5') ||
+              lowerId.includes('ultra')
+            ) {
+              powerhouse.push(option)
+            }
+            // 3. Fast / Efficient (Includes Legacy Frontier)
+            // Includes 1.5 Pro, Flash, Mini, GPT-4
+            else if (
+              lowerId.includes('flash') ||
+              lowerId.includes('mini') ||
+              lowerId.includes('haiku') ||
+              lowerId.includes('pro') ||
+              lowerId.includes('gpt-4')
+            ) {
+              fast.push(option)
+            }
+            // 4. Other
+            else {
+              experimental.push(option)
+            }
+          })
+
+          groups = [
+            {
+              label: `🧠 ${t('settings.model_category.reasoning')}`,
+              options: reasoning.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `💪 ${t('settings.model_category.powerhouse')}`,
+              options: powerhouse.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `⚡ ${t('settings.model_category.fast')}`,
+              options: fast.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `🧪 ${t('settings.model_category.other')}`,
+              options: experimental.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+          ].filter((g) => g.options.length > 0)
+        } else if (settings.provider === 'openai') {
+          const res = await fetch('https://api.openai.com/v1/models', {
+            headers: { Authorization: `Bearer ${settings.apiKey}` },
+            signal: abortController.signal,
+          })
+          if (!res.ok) throw new Error('Failed to fetch from OpenAI')
+          const data = await res.json()
+
+          const blacklist =
+            /(audio|realtime|instruct|vision|embedding|dall-e|tts|whisper)/i
+          const filtered = data.data.filter((m: any) => {
+            const id = m.id.toLowerCase()
+            return (
+              (id.startsWith('gpt') ||
+                id.startsWith('o1') ||
+                id.startsWith('o3')) &&
+              !blacklist.test(id)
+            )
+          })
+
+          const powerhouse: SelectOption[] = []
+          const reasoning: SelectOption[] = []
+          const fast: SelectOption[] = []
+          const experimental: SelectOption[] = []
+
+          filtered.forEach((m: any) => {
+            const id = m.id
+            const lowerId = id.toLowerCase()
+            const option: SelectOption = {
+              value: id,
+              label: id,
+              icon: <OpenAIIcon />,
+            }
+
+            if (lowerId.startsWith('o1') || lowerId.startsWith('o3')) {
+              reasoning.push(option)
+            } else if (lowerId.includes('gpt-5')) {
+              powerhouse.push(option)
+            } else if (lowerId.includes('gpt-4')) {
+              // Per user, GPT-4 is now "outdated" / efficient compared to GPT-5
+              fast.push(option)
+            } else if (lowerId.includes('mini')) {
+              fast.push(option)
+            } else {
+              experimental.push(option)
+            }
+          })
+
+          groups = [
+            {
+              label: `🧠 ${t('settings.model_category.reasoning')}`,
+              options: reasoning.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `💪 ${t('settings.model_category.powerhouse')}`,
+              options: powerhouse.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `⚡ ${t('settings.model_category.fast')}`,
+              options: fast.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+            {
+              label: `🧪 ${t('settings.model_category.other')}`,
+              options: experimental.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+          ].filter((g) => g.options.length > 0)
+        } else if (settings.provider === 'anthropic') {
+          const res = await fetch('https://api.anthropic.com/v1/models', {
+            headers: {
+              'x-api-key': settings.apiKey,
+              'anthropic-version': '2023-06-01',
+              'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            signal: abortController.signal,
+          })
+          if (!res.ok) throw new Error('Failed to fetch from Anthropic')
+          const data = await res.json()
+
+          const options = data.data.map((m: any) => ({
+            value: m.id,
+            label: m.id,
+            icon: <AnthropicIcon />,
+          }))
+
+          groups = [
+            {
+              label: t('settings.claude_series'),
+              options: options.sort((a, b) =>
+                b.value.localeCompare(a.value, undefined, { numeric: true }),
+              ),
+            },
+          ]
+        }
+
+        if (abortController.signal.aborted) return
+        setAvailableModels(groups)
+        MODEL_FETCH_CACHE.set(cacheKey, {
+          fetchedAt: Date.now(),
+          groups,
+        })
+      } catch (e) {
+        if ((e as any)?.name === 'AbortError') return
+        alert(t('settings.fetch_models_error'))
+        console.error('[Model Fetch Error]', sanitizeErrorForLogs(e))
+      } finally {
+        if (modelFetchAbortRef.current === abortController) {
+          modelFetchAbortRef.current = null
+        }
+        if (!abortController.signal.aborted) {
+          setLoadingModels(false)
+        }
+      }
+    },
+    [settings.apiKey, settings.provider, t],
+  )
 
   React.useEffect(() => {
     if (
       settings.apiKey &&
       ['openai', 'gemini', 'anthropic'].includes(settings.provider)
     ) {
-      fetchModels()
+      void fetchModels()
     }
   }, [settings.provider, settings.apiKey, fetchModels])
 
@@ -1076,7 +1191,7 @@ export const AISettingsPanel: React.FC<{
                 { value: 'local', label: 'Local', icon: <MdComputer /> },
                 { value: 'custom', label: 'Custom', icon: <MdDns /> },
               ]}
-              onChange={(val) => handleChange('provider', val)}
+              onChange={(val) => handleProviderChange(val as AIProvider)}
               icon={
                 settings.provider === 'openai' ? (
                   <OpenAIIcon />
@@ -1130,7 +1245,7 @@ export const AISettingsPanel: React.FC<{
                 </div>
                 {settings.provider === 'custom' && (
                   <PremiumInput
-                    label={t('settings.proxy_api_key')}
+                    label={`${t('settings.proxy_api_key')} *`}
                     value={settings.apiKey}
                     onChange={(val) => handleChange('apiKey', val)}
                     type="password"
@@ -1150,7 +1265,7 @@ export const AISettingsPanel: React.FC<{
                 ) &&
                   settings.apiKey && (
                     <button
-                      onClick={fetchModels}
+                      onClick={() => void fetchModels({ force: true })}
                       disabled={loadingModels}
                       className="text-primary flex items-center gap-1 text-[10px] font-medium hover:underline disabled:opacity-50"
                     >

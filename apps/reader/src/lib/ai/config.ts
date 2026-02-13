@@ -38,7 +38,7 @@ export interface AISettings {
 export const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-3.0-flash',
+  model: 'gemini-1.5-flash',
   temperature: 0.7,
   systemPrompt:
     'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',

@@ -414,8 +414,12 @@ export function useChatbot() {
         userPrompt = `User intents: ${intentLine}\n\n${userPrompt}`
       }
 
-      const needsKey = !['local', 'custom'].includes(settings.provider)
-      if (needsKey && !settings.apiKey)
+      const needsKey = settings.provider !== 'local'
+      const needsBaseUrl =
+        settings.provider === 'local' || settings.provider === 'custom'
+      if (needsBaseUrl && !settings.baseUrl?.trim())
+        throw new Error(`Base URL required for ${settings.provider}.`)
+      if (needsKey && !settings.apiKey?.trim())
         throw new Error(`API Key required for ${settings.provider}.`)
 
       // ✅ history sem stale (usa stateRef)
