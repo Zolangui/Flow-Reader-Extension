@@ -55,8 +55,9 @@ export const BookCard: React.FC<BookCardProps> = ({
           )}
 
           {isIndexed && (
-            <div className="size-5 from-primary shadow-primary/30 animate-in fade-in zoom-in absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-gradient-to-br to-blue-600 text-white shadow-md backdrop-blur-sm duration-300">
-              <IndexedIcon className="text-[14px]" />
+            <div className="size-5 animate-in fade-in zoom-in absolute bottom-1 right-1 flex items-center justify-center rounded-md border border-white/40 bg-white/20 text-white shadow-lg backdrop-blur-md duration-300">
+              <div className="from-primary/40 absolute inset-0 rounded-md bg-gradient-to-br to-blue-600/40 opacity-50" />
+              <IndexedIcon className="relative z-10 text-[12px] drop-shadow-sm" />
             </div>
           )}
         </div>
@@ -115,8 +116,11 @@ export const BookCard: React.FC<BookCardProps> = ({
         )}
 
         {isIndexed && (
-          <div className="size-8 from-primary shadow-primary/30 animate-in fade-in zoom-in absolute bottom-4 right-2 z-10 flex items-center justify-center rounded-md bg-gradient-to-br to-blue-600 text-white shadow-lg backdrop-blur-md duration-300">
-            <IndexedIcon className="animate-pulse-slow text-xl" />
+          <div className="size-8 animate-in fade-in zoom-in absolute bottom-4 right-2 z-10 flex items-center justify-center rounded-xl border border-white/40 bg-white/10 text-white shadow-xl backdrop-blur-xl duration-300">
+            {/* SOTA Glow Layer */}
+            <div className="from-primary/60 absolute inset-0 rounded-xl bg-gradient-to-br to-blue-600/60 opacity-40" />
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-tl from-white/20 to-transparent" />
+            <IndexedIcon className="animate-pulse-slow relative z-10 text-xl drop-shadow-md" />
           </div>
         )}
 

@@ -311,5 +311,6 @@ export default {
   'ai.status.single_thread': 'Nur Single-Thread (langsamer in Firefox MV3)',
   'ai.status.preload_timeout':
     'Vorabladen: Zeitueberschreitung (erneut versuchen)',
-  'ai.status.click_to_download': 'Zum Herunterladen klicken',
+  'ai.status.click_to_download': 'Klicken zum Herunterladen',
+  'ai.status.not_indexed': 'Nicht indiziert',
 } as const

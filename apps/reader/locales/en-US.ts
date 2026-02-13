@@ -347,4 +347,5 @@ export default {
   'ai.status.single_thread': 'Single-thread only (slower on Firefox MV3)',
   'ai.status.preload_timeout': 'Initialization timed out (click to retry)',
   'ai.status.click_to_download': 'Click to Download',
+  'ai.status.not_indexed': 'Not indexed',
 } as const

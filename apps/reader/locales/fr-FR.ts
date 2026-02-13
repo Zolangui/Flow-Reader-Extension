@@ -313,4 +313,5 @@ export default {
   'ai.status.preload_timeout':
     "Délai d'initialisation dépassé (cliquez pour réessayer)",
   'ai.status.click_to_download': 'Cliquer pour télécharger',
+  'ai.status.not_indexed': 'Non indexé',
 } as const

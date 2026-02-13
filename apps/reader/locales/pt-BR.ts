@@ -356,4 +356,5 @@ export default {
   'ai.status.preload_timeout':
     'Inicialização demorou demais (clique para tentar novamente)',
   'ai.status.click_to_download': 'Clique para baixar',
+  'ai.status.not_indexed': 'Não indexado',
 } as const

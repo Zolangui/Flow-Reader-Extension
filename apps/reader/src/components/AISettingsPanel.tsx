@@ -1507,7 +1507,7 @@ export const AISettingsPanel: React.FC<{
                           ? (indexedChunkCount || 0) > 0
                             ? `${indexedChunkCount} chunks`
                             : t('status.ready')
-                          : 'Not indexed'}
+                          : t('status.not_indexed')}
                       </span>
                       <MdChevronRight className="text-subtle transition-transform group-hover:translate-x-0.5" />
                     </div>

@@ -307,5 +307,6 @@ export default {
   'ai.status.single_thread': 'Solo un hilo (más lento en Firefox MV3)',
   'ai.status.preload_timeout':
     'La inicialización agotó el tiempo (haz clic para reintentar)',
-  'ai.status.click_to_download': 'Haz clic para descargar',
+  'ai.status.click_to_download': 'Clic para Descargar',
+  'ai.status.not_indexed': 'No indexado',
 } as const
