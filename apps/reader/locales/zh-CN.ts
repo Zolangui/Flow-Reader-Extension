@@ -56,7 +56,7 @@ export default {
   'settings.color_scheme.light': '浅色',
   'settings.color_scheme.dark': '深色',
   'settings.synchronization.title': '同步',
-  'settings.synchronization_desc': '连接到云服务以同步您的图书馆。',
+  'settings.synchronization.synchronization_desc': '连接到云服务以同步您的图书馆。',
   'settings.synchronization.authorize': '授权',
   'settings.synchronization.unauthorize': '取消授权',
   'settings.synchronization.service': '服务',

@@ -55,7 +55,7 @@ export default {
   'settings.color_scheme.light': 'Light',
   'settings.color_scheme.dark': 'Dark',
   'settings.synchronization.title': 'Synchronization',
-  'settings.synchronization_desc':
+  'settings.synchronization.synchronization_desc':
     'Connect to a cloud service to sync your library.',
   'settings.synchronization.authorize': 'Authorize',
   'settings.synchronization.unauthorize': 'Unauthorize',

@@ -47,7 +47,7 @@ export default {
   'settings.color_scheme.light': 'Clair',
   'settings.color_scheme.dark': 'Sombre',
   'settings.synchronization.title': 'Synchronisation',
-  'settings.synchronization_desc':
+  'settings.synchronization.synchronization_desc':
     'Connectez un service cloud pour synchroniser votre bibliothèque.',
   'settings.synchronization.authorize': 'Autoriser',
   'settings.synchronization.unauthorize': 'Revoquer',

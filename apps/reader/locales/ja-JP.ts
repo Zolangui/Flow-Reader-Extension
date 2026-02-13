@@ -57,7 +57,7 @@ export default {
   'settings.color_scheme.light': 'ライト',
   'settings.color_scheme.dark': 'ダーク',
   'settings.synchronization.title': '同期',
-  'settings.synchronization_desc':
+  'settings.synchronization.synchronization_desc':
     'クラウドサービスに接続してライブラリを同期します。',
   'settings.synchronization.authorize': '認証',
   'settings.synchronization.unauthorize': '認証解除',
