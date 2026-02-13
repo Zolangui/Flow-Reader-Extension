@@ -1,5 +1,6 @@
 import { Overlay } from '@literal-ui/core'
 import clsx from 'clsx'
+import dynamic from 'next/dynamic'
 import { ComponentProps, useEffect, useMemo, useState } from 'react'
 import { IconType } from 'react-icons'
 import {
@@ -14,7 +15,6 @@ import {
   MdLibraryBooks,
   MdSmartToy,
 } from 'react-icons/md'
-import { RiHome6Line, RiSettings5Line } from 'react-icons/ri'
 import { useRecoilState } from 'recoil'
 
 import {
@@ -32,8 +32,11 @@ import { reader, useReaderSnapshot } from '../models'
 import { navbarState, useZenMode } from '../state'
 import { activeClass } from '../styles'
 
-import { ChatbotSidebar } from './ChatbotSidebar'
 import { SplitView, useSplitViewItem } from './base'
+import {
+  ExtensionSettingsIcon as _ExtensionSettingsIcon,
+  HomeIcon as _HomeIcon,
+} from './icons/ProviderIcons'
 import { Settings } from './pages'
 import { AnnotationView } from './viewlets/AnnotationView'
 import { ImageView } from './viewlets/ImageView'
@@ -44,7 +47,17 @@ import { TimelineView } from './viewlets/TimelineView'
 import { TocView } from './viewlets/TocView'
 import { TypographyView } from './viewlets/TypographyView'
 
-export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+const ChatbotSidebar = dynamic(
+  () => import('./ChatbotSidebar').then((m) => m.ChatbotSidebar),
+  { ssr: false },
+)
+
+const HomeIcon = _HomeIcon as unknown as IconType
+const ExtensionSettingsIcon = _ExtensionSettingsIcon as unknown as IconType
+
+export const Layout: React.FC<{ children?: React.ReactNode }> = ({
+  children,
+}) => {
   useColorScheme()
   useZenModeHandler()
   const [isZenMode] = useZenMode()
@@ -78,7 +91,7 @@ interface IAction {
 }
 interface IViewAction extends IAction {
   name: Action
-  View: React.FC<any>
+  View: React.ComponentType<any>
 }
 
 const viewActions: IViewAction[] = [
@@ -212,13 +225,13 @@ function PageActionBar({ env }: EnvActionBarProps) {
       {
         name: 'home',
         title: 'home',
-        Icon: RiHome6Line,
+        Icon: HomeIcon,
         env: Env.Mobile,
       },
       {
         name: 'settings',
         title: 'settings',
-        Icon: RiSettings5Line,
+        Icon: ExtensionSettingsIcon,
         Component: Settings,
         env: Env.Desktop | Env.Mobile,
       },
@@ -274,7 +287,7 @@ function NavigationBar() {
   )
 }
 
-interface ActionBarProps extends ComponentProps<'ul'> { }
+interface ActionBarProps extends ComponentProps<'ul'> {}
 function ActionBar({ className, ...props }: ActionBarProps) {
   return (
     <ul className={clsx('ActionBar flex sm:flex-col', className)} {...props} />
@@ -364,7 +377,7 @@ const SideBar: React.FC = () => {
   )
 }
 
-interface ReaderProps extends ComponentProps<'div'> { }
+interface ReaderProps extends ComponentProps<'div'> {}
 const Reader: React.FC<ReaderProps> = ({
   className,
   ...props

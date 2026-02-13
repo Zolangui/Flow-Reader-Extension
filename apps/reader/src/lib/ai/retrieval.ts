@@ -5,7 +5,13 @@
 
 import type { VectorRecord } from '../../db'
 
-import { displayLangName, extractKeywordsWithStopwords, normalizeDiacritics, tokenizeWords, tokenizeWordsNormalized } from './text'
+import {
+  displayLangName,
+  extractKeywordsWithStopwords,
+  normalizeDiacritics,
+  tokenizeWords,
+  tokenizeWordsNormalized,
+} from './text'
 
 // ============================================================================
 // BM25 IMPLEMENTATION
@@ -15,8 +21,8 @@ import { displayLangName, extractKeywordsWithStopwords, normalizeDiacritics, tok
 /**
  * BM25 parameters (tuned for book content)
  */
-const BM25_K1 = 1.2  // Term frequency saturation
-const BM25_B = 0.75  // Length normalization
+const BM25_K1 = 1.2 // Term frequency saturation
+const BM25_B = 0.75 // Length normalization
 
 type DocStats = { tokens: string[]; tf: Map<string, number>; len: number }
 const bm25Cache = new WeakMap<VectorRecord, DocStats>()
@@ -25,62 +31,70 @@ const bm25Cache = new WeakMap<VectorRecord, DocStats>()
  * Gets cached document statistics for BM25
  * Now uses normalized tokens for consistent matching across languages.
  */
-function getDocStats(text: string, chunk?: VectorRecord, locale = 'en'): DocStats {
-    if (chunk) {
-        const c = bm25Cache.get(chunk)
-        if (c) return c
-    }
+function getDocStats(
+  text: string,
+  chunk?: VectorRecord,
+  locale = 'en',
+): DocStats {
+  if (chunk) {
+    const c = bm25Cache.get(chunk)
+    if (c) return c
+  }
 
-    // Use normalized tokens for consistent matching (espaço == espaco)
-    const tokens = tokenizeWordsNormalized(text, locale)
-    const tf = new Map<string, number>()
-    for (const tok of tokens) tf.set(tok, (tf.get(tok) || 0) + 1)
+  // Use normalized tokens for consistent matching (espaço == espaco)
+  const tokens = tokenizeWordsNormalized(text, locale)
+  const tf = new Map<string, number>()
+  for (const tok of tokens) tf.set(tok, (tf.get(tok) || 0) + 1)
 
-    const stats = { tokens, tf, len: tokens.length }
-    if (chunk) bm25Cache.set(chunk, stats)
-    return stats
+  const stats = { tokens, tf, len: tokens.length }
+  if (chunk) bm25Cache.set(chunk, stats)
+  return stats
 }
 
 /**
  * BM25 score for a single document
  */
 function bm25Score(
-    queryTokens: string[],
-    doc: DocStats,
-    avgDocLength: number,
-    idf: Map<string, number>
+  queryTokens: string[],
+  doc: DocStats,
+  avgDocLength: number,
+  idf: Map<string, number>,
 ): number {
-    const docLength = doc.len
-    let score = 0
+  const docLength = doc.len
+  let score = 0
 
-    for (const term of queryTokens) {
-        const tf = doc.tf.get(term) || 0
-        if (!tf) continue
+  for (const term of queryTokens) {
+    const tf = doc.tf.get(term) || 0
+    if (!tf) continue
 
-        const termIdf = idf.get(term) || 0
-        const numerator = tf * (BM25_K1 + 1)
-        const denominator = tf + BM25_K1 * (1 - BM25_B + BM25_B * (docLength / avgDocLength))
+    const termIdf = idf.get(term) || 0
+    const numerator = tf * (BM25_K1 + 1)
+    const denominator =
+      tf + BM25_K1 * (1 - BM25_B + BM25_B * (docLength / avgDocLength))
 
-        score += termIdf * (numerator / denominator)
-    }
+    score += termIdf * (numerator / denominator)
+  }
 
-    return score
+  return score
 }
 
 /**
  * Calculate IDF (Inverse Document Frequency) for terms
  */
-function calculateIDF(queryTokens: string[], documents: DocStats[]): Map<string, number> {
-    const N = documents.length
-    const idf = new Map<string, number>()
+function calculateIDF(
+  queryTokens: string[],
+  documents: DocStats[],
+): Map<string, number> {
+  const N = documents.length
+  const idf = new Map<string, number>()
 
-    for (const term of queryTokens) {
-        let df = 0
-        for (const doc of documents) if (doc.tf.has(term)) df++
-        const v = Math.log((N - df + 0.5) / (df + 0.5) + 1)
-        idf.set(term, Math.max(0, v))
-    }
-    return idf
+  for (const term of queryTokens) {
+    let df = 0
+    for (const doc of documents) if (doc.tf.has(term)) df++
+    const v = Math.log((N - df + 0.5) / (df + 0.5) + 1)
+    idf.set(term, Math.max(0, v))
+  }
+  return idf
 }
 
 /**
@@ -88,52 +102,53 @@ function calculateIDF(queryTokens: string[], documents: DocStats[]): Map<string,
  * Now uses locale-aware normalized tokenization for PT/FR/DE support.
  */
 function expandCJKQueryTokens(query: string, locale = 'en'): string[] {
-    const l = (locale || 'en').toLowerCase()
-    if (!l.startsWith('zh') && !l.startsWith('ja')) return []
+  const l = (locale || 'en').toLowerCase()
+  if (!l.startsWith('zh') && !l.startsWith('ja')) return []
 
-    const normalized = normalizeDiacritics((query || '').toLowerCase())
-    const cjkChars = Array.from(normalized).filter(c => /[\u4e00-\u9fff\u3040-\u30ff]/u.test(c))
-    if (cjkChars.length === 0) return []
+  const normalized = normalizeDiacritics((query || '').toLowerCase())
+  const cjkChars = Array.from(normalized).filter((c) =>
+    /[\u4e00-\u9fff\u3040-\u30ff]/u.test(c),
+  )
+  if (cjkChars.length === 0) return []
 
-    const unigrams = cjkChars
-    const bigrams: string[] = []
-    for (let i = 0; i < cjkChars.length - 1; i++) {
-        bigrams.push(cjkChars[i] + cjkChars[i + 1])
-    }
-    return [...unigrams, ...bigrams]
+  const unigrams = cjkChars
+  const bigrams: string[] = []
+  for (let i = 0; i < cjkChars.length - 1; i++) {
+    bigrams.push(cjkChars[i] + cjkChars[i + 1])
+  }
+  return [...unigrams, ...bigrams]
 }
 
 export function bm25Search(
-    query: string,
-    chunks: VectorRecord[],
-    topK = 10,
-    locale = 'en'
+  query: string,
+  chunks: VectorRecord[],
+  topK = 10,
+  locale = 'en',
 ): (VectorRecord & { bm25Score: number })[] {
-    if (chunks.length === 0) return []
+  if (chunks.length === 0) return []
 
-    // Use normalized tokens for consistent matching
-    const queryTokens = tokenizeWordsNormalized(query, locale)
-    const expandedCjk = expandCJKQueryTokens(query, locale)
-    const mergedTokens = [...queryTokens, ...expandedCjk]
-    if (mergedTokens.length === 0) return chunks.slice(0, topK).map(c => ({ ...c, bm25Score: 0 }))
+  // Use normalized tokens for consistent matching
+  const queryTokens = tokenizeWordsNormalized(query, locale)
+  const expandedCjk = expandCJKQueryTokens(query, locale)
+  const mergedTokens = [...queryTokens, ...expandedCjk]
+  if (mergedTokens.length === 0)
+    return chunks.slice(0, topK).map((c) => ({ ...c, bm25Score: 0 }))
 
-    // Get stats for all documents (cached), with locale
-    const docs = chunks.map(c => getDocStats(c.content, c, locale))
-    const avgDocLength = docs.reduce((sum, doc) => sum + doc.len, 0) / docs.length
+  // Get stats for all documents (cached), with locale
+  const docs = chunks.map((c) => getDocStats(c.content, c, locale))
+  const avgDocLength = docs.reduce((sum, doc) => sum + doc.len, 0) / docs.length
 
-    // Calculate IDF and score with unique tokens (consistent - avoids inflating score from repeats)
-    const uniqueQueryTokens = [...new Set(mergedTokens)]
-    const idf = calculateIDF(uniqueQueryTokens, docs)
+  // Calculate IDF and score with unique tokens (consistent - avoids inflating score from repeats)
+  const uniqueQueryTokens = [...new Set(mergedTokens)]
+  const idf = calculateIDF(uniqueQueryTokens, docs)
 
-    // Score using same unique tokens for consistency with IDF
-    const scored = chunks.map((chunk, i) => ({
-        ...chunk,
-        bm25Score: bm25Score(uniqueQueryTokens, docs[i], avgDocLength, idf)
-    }))
+  // Score using same unique tokens for consistency with IDF
+  const scored = chunks.map((chunk, i) => ({
+    ...chunk,
+    bm25Score: bm25Score(uniqueQueryTokens, docs[i], avgDocLength, idf),
+  }))
 
-    return scored
-        .sort((a, b) => b.bm25Score - a.bm25Score)
-        .slice(0, topK)
+  return scored.sort((a, b) => b.bm25Score - a.bm25Score).slice(0, topK)
 }
 
 /**
@@ -141,55 +156,63 @@ export function bm25Search(
  * Uses Reciprocal Rank Fusion (RRF) to combine rankings
  */
 export function hybridSearch(
-    vectorResults: (VectorRecord & { score: number })[],
-    bm25Results: (VectorRecord & { bm25Score: number })[],
-    vectorWeight = 0.6,
-    k = 60
-): (VectorRecord & { hybridScore: number; vectorRank: number; bm25Rank: number })[] {
-    // Create rank maps
-    const vectorRanks = new Map<number, number>()
-    const bm25Ranks = new Map<number, number>()
+  vectorResults: (VectorRecord & { score: number })[],
+  bm25Results: (VectorRecord & { bm25Score: number })[],
+  vectorWeight = 0.6,
+  k = 60,
+): (VectorRecord & {
+  hybridScore: number
+  vectorRank: number
+  bm25Rank: number
+})[] {
+  // Create rank maps
+  const vectorRanks = new Map<number, number>()
+  const bm25Ranks = new Map<number, number>()
 
-    const byIndex = new Map<number, VectorRecord>()
+  const byIndex = new Map<number, VectorRecord>()
 
-    vectorResults.forEach((r, i) => {
-        vectorRanks.set(r.index, i + 1)
-        byIndex.set(r.index, r)
+  vectorResults.forEach((r, i) => {
+    vectorRanks.set(r.index, i + 1)
+    byIndex.set(r.index, r)
+  })
+  bm25Results.forEach((r, i) => {
+    bm25Ranks.set(r.index, i + 1)
+    if (!byIndex.has(r.index)) byIndex.set(r.index, r)
+  })
+
+  const results: (VectorRecord & {
+    hybridScore: number
+    vectorRank: number
+    bm25Rank: number
+  })[] = []
+
+  for (const [idx, chunk] of byIndex.entries()) {
+    const vectorRank = vectorRanks.get(idx) || vectorResults.length + 1
+    const bm25Rank = bm25Ranks.get(idx) || bm25Results.length + 1
+
+    const vectorRRF = 1 / (k + vectorRank)
+    const bm25RRF = 1 / (k + bm25Rank)
+
+    const hybridScore = vectorWeight * vectorRRF + (1 - vectorWeight) * bm25RRF
+
+    results.push({
+      ...chunk,
+      hybridScore,
+      vectorRank,
+      bm25Rank,
     })
-    bm25Results.forEach((r, i) => {
-        bm25Ranks.set(r.index, i + 1)
-        if (!byIndex.has(r.index)) byIndex.set(r.index, r)
-    })
+  }
 
-    const results: (VectorRecord & { hybridScore: number; vectorRank: number; bm25Rank: number })[] = []
-
-    for (const [idx, chunk] of byIndex.entries()) {
-        const vectorRank = vectorRanks.get(idx) || vectorResults.length + 1
-        const bm25Rank = bm25Ranks.get(idx) || bm25Results.length + 1
-
-        const vectorRRF = 1 / (k + vectorRank)
-        const bm25RRF = 1 / (k + bm25Rank)
-
-        const hybridScore = vectorWeight * vectorRRF + (1 - vectorWeight) * bm25RRF
-
-        results.push({
-            ...chunk,
-            hybridScore,
-            vectorRank,
-            bm25Rank
-        })
-    }
-
-    return results.sort((a, b) => b.hybridScore - a.hybridScore)
+  return results.sort((a, b) => b.hybridScore - a.hybridScore)
 }
 
 export interface RetrievalParams {
-    topK: number
-    maxChars: number
-    expandContext: boolean
-    // New integration features
-    userAnnotations?: string[]
-    userDefinitions?: string[]
+  topK: number
+  maxChars: number
+  expandContext: boolean
+  // New integration features
+  userAnnotations?: string[]
+  userDefinitions?: string[]
 }
 
 /**
@@ -197,60 +220,60 @@ export interface RetrievalParams {
  * not regex-routed (fragile, language-bound).
  */
 export function getRetrievalParamsForReading(
-    intent: ReadingIntent,
-    depth: 'short' | 'balanced' | 'deep',
-    opts?: { isDeeper?: boolean; multiIntentCount?: number },
+  intent: ReadingIntent,
+  depth: 'short' | 'balanced' | 'deep',
+  opts?: { isDeeper?: boolean; multiIntentCount?: number },
 ): RetrievalParams {
-    const isDeeper = !!opts?.isDeeper
-    const multiIntentCount = Math.max(1, opts?.multiIntentCount || 1)
+  const isDeeper = !!opts?.isDeeper
+  const multiIntentCount = Math.max(1, opts?.multiIntentCount || 1)
 
-    // Baseline: balanced, general.
-    let topK = 5
-    let maxChars = 10000
-    let expandContext = true
+  // Baseline: balanced, general.
+  let topK = 5
+  let maxChars = 10000
+  let expandContext = true
 
-    if (depth === 'short') {
-        topK = 3
-        maxChars = 4000
-        expandContext = false
-    } else if (depth === 'deep') {
-        topK = 8
-        maxChars = 18000
-        expandContext = true
+  if (depth === 'short') {
+    topK = 3
+    maxChars = 4000
+    expandContext = false
+  } else if (depth === 'deep') {
+    topK = 8
+    maxChars = 18000
+    expandContext = true
+  }
+
+  // Intent bump: explain/analyze usually need more evidence/context.
+  if (intent === 'explain' || intent === 'analyze') {
+    topK = Math.min(topK + 2, 14)
+    maxChars = Math.min(maxChars + 6000, 30000)
+    expandContext = true
+  } else if (intent === 'summarize') {
+    topK = Math.min(topK + 1, 12)
+    maxChars = Math.min(maxChars + 4000, 30000)
+    expandContext = true
+  } else if (intent === 'question') {
+    // Questions often do fine with less context unless depth is deep.
+    if (depth !== 'deep') {
+      topK = Math.max(3, topK - 1)
+      maxChars = Math.max(4000, maxChars - 2000)
     }
+  }
 
-    // Intent bump: explain/analyze usually need more evidence/context.
-    if (intent === 'explain' || intent === 'analyze') {
-        topK = Math.min(topK + 2, 14)
-        maxChars = Math.min(maxChars + 6000, 30000)
-        expandContext = true
-    } else if (intent === 'summarize') {
-        topK = Math.min(topK + 1, 12)
-        maxChars = Math.min(maxChars + 4000, 30000)
-        expandContext = true
-    } else if (intent === 'question') {
-        // Questions often do fine with less context unless depth is deep.
-        if (depth !== 'deep') {
-            topK = Math.max(3, topK - 1)
-            maxChars = Math.max(4000, maxChars - 2000)
-        }
-    }
+  // Multi-intent: slightly more recall.
+  if (multiIntentCount >= 2) {
+    topK = Math.min(topK + 2, 14)
+    maxChars = Math.min(maxChars + 4000, 30000)
+    expandContext = true
+  }
 
-    // Multi-intent: slightly more recall.
-    if (multiIntentCount >= 2) {
-        topK = Math.min(topK + 2, 14)
-        maxChars = Math.min(maxChars + 4000, 30000)
-        expandContext = true
-    }
+  // "Deeper" follow-up: intentionally widen recall.
+  if (isDeeper) {
+    topK = Math.min(topK * 2, 16)
+    maxChars = Math.min(Math.floor(maxChars * 1.5), 30000)
+    expandContext = true
+  }
 
-    // "Deeper" follow-up: intentionally widen recall.
-    if (isDeeper) {
-        topK = Math.min(topK * 2, 16)
-        maxChars = Math.min(Math.floor(maxChars * 1.5), 30000)
-        expandContext = true
-    }
-
-    return { topK, maxChars, expandContext }
+  return { topK, maxChars, expandContext }
 }
 
 /**
@@ -258,90 +281,99 @@ export function getRetrievalParamsForReading(
  * Filters out common stop words and short words
  */
 function extractKeywords(text: string, langTag = 'en'): Set<string> {
-    return extractKeywordsWithStopwords(text, langTag)
+  return extractKeywordsWithStopwords(text, langTag)
 }
 
 /**
  * Calculates keyword overlap score between chunk content and query keywords.
- * 
+ *
  * BULLETPROOF VERSION:
  * Uses tokenization instead of regex \b which fails on Unicode (ç, ã, é).
  * Normalizes diacritics so 'espaço' matches 'espaco'.
- * 
+ *
  * @param content - The chunk content
  * @param queryKeywords - Set of keywords from the query
  * @param locale - Language tag for proper tokenization
  * @returns Score between 0 and 1
  */
-function calculateKeywordOverlap(content: string, queryKeywords: Set<string>, locale = 'pt'): number {
-    if (queryKeywords.size === 0) return 0
+function calculateKeywordOverlap(
+  content: string,
+  queryKeywords: Set<string>,
+  locale = 'pt',
+): number {
+  if (queryKeywords.size === 0) return 0
 
-    // Tokenize and normalize content
-    const tokens = tokenizeWords(content, locale)
-    const tf = new Map<string, number>()
+  // Tokenize and normalize content
+  const tokens = tokenizeWords(content, locale)
+  const tf = new Map<string, number>()
 
-    for (const token of tokens) {
-        const normalized = normalizeDiacritics(token)
-        tf.set(normalized, (tf.get(normalized) || 0) + 1)
+  for (const token of tokens) {
+    const normalized = normalizeDiacritics(token)
+    tf.set(normalized, (tf.get(normalized) || 0) + 1)
+  }
+
+  let matchCount = 0
+  let weightedScore = 0
+
+  for (const keyword of queryKeywords) {
+    const normalizedKeyword = normalizeDiacritics(keyword.toLowerCase())
+    const occurrences = tf.get(normalizedKeyword) || 0
+
+    if (occurrences > 0) {
+      matchCount++
+      // Diminishing returns for multiple occurrences
+      weightedScore += Math.min(occurrences, 3) / 3
     }
+  }
 
-    let matchCount = 0
-    let weightedScore = 0
+  // Combine coverage (how many keywords found) with density (how often)
+  const coverage = matchCount / queryKeywords.size
+  const density = weightedScore / queryKeywords.size
 
-    for (const keyword of queryKeywords) {
-        const normalizedKeyword = normalizeDiacritics(keyword.toLowerCase())
-        const occurrences = tf.get(normalizedKeyword) || 0
-
-        if (occurrences > 0) {
-            matchCount++
-            // Diminishing returns for multiple occurrences
-            weightedScore += Math.min(occurrences, 3) / 3
-        }
-    }
-
-    // Combine coverage (how many keywords found) with density (how often)
-    const coverage = matchCount / queryKeywords.size
-    const density = weightedScore / queryKeywords.size
-
-    return coverage * 0.7 + density * 0.3
+  return coverage * 0.7 + density * 0.3
 }
 
 /**
  * Chunk with reranking score
  */
 export interface RankedChunk extends VectorRecord {
-    score: number
-    rerankScore: number
+  score: number
+  rerankScore: number
 }
 
 /**
  * Reranks chunks using a combination of vector similarity and keyword overlap
- * 
+ *
  * @param chunks - Chunks with vector similarity scores
  * @param query - The original query
  * @param vectorWeight - Weight for vector similarity (0-1), keyword weight is 1 - vectorWeight
  * @returns Reranked chunks sorted by combined score
  */
 export function rerankChunks(
-    chunks: (VectorRecord & { score: number })[],
-    query: string,
-    vectorWeight = 0.7,
-    langTag = 'en'
+  chunks: (VectorRecord & { score: number })[],
+  query: string,
+  vectorWeight = 0.7,
+  langTag = 'en',
 ): RankedChunk[] {
-    const queryKeywords = extractKeywords(query, langTag)
-    const keywordWeight = 1 - vectorWeight
+  const queryKeywords = extractKeywords(query, langTag)
+  const keywordWeight = 1 - vectorWeight
 
-    return chunks
-        .map(chunk => {
-            const keywordScore = calculateKeywordOverlap(chunk.content, queryKeywords, langTag)
-            const rerankScore = chunk.score * vectorWeight + keywordScore * keywordWeight
+  return chunks
+    .map((chunk) => {
+      const keywordScore = calculateKeywordOverlap(
+        chunk.content,
+        queryKeywords,
+        langTag,
+      )
+      const rerankScore =
+        chunk.score * vectorWeight + keywordScore * keywordWeight
 
-            return {
-                ...chunk,
-                rerankScore
-            }
-        })
-        .sort((a, b) => b.rerankScore - a.rerankScore)
+      return {
+        ...chunk,
+        rerankScore,
+      }
+    })
+    .sort((a, b) => b.rerankScore - a.rerankScore)
 }
 
 /**
@@ -350,54 +382,56 @@ export function rerankChunks(
  * Used for deduplication.
  */
 function textSimilarity(text1: string, text2: string, locale = 'pt'): number {
-    // Use normalized tokens for consistent matching
-    const words1 = new Set(tokenizeWordsNormalized(text1, locale))
-    const words2 = new Set(tokenizeWordsNormalized(text2, locale))
+  // Use normalized tokens for consistent matching
+  const words1 = new Set(tokenizeWordsNormalized(text1, locale))
+  const words2 = new Set(tokenizeWordsNormalized(text2, locale))
 
-    if (words1.size === 0 && words2.size === 0) return 1
-    if (words1.size === 0 || words2.size === 0) return 0
+  if (words1.size === 0 && words2.size === 0) return 1
+  if (words1.size === 0 || words2.size === 0) return 0
 
-    const intersection = new Set([...words1].filter(w => words2.has(w)))
-    const union = new Set([...words1, ...words2])
+  const intersection = new Set([...words1].filter((w) => words2.has(w)))
+  const union = new Set([...words1, ...words2])
 
-    return intersection.size / union.size
+  return intersection.size / union.size
 }
 
 /**
  * Removes chunks that are too similar to each other.
  * Now accepts locale for proper tokenization.
  * Keeps the chunk with higher score when duplicates are found.
- * 
+ *
  * @param chunks - Ranked chunks to deduplicate
  * @param similarityThreshold - Threshold above which chunks are considered duplicates (0-1)
  * @param locale - Language for proper tokenization
  * @returns Deduplicated chunks
  */
 export function deduplicateChunks(
-    chunks: RankedChunk[],
-    similarityThreshold = 0.75,
-    locale = 'en'
+  chunks: RankedChunk[],
+  similarityThreshold = 0.75,
+  locale = 'en',
 ): RankedChunk[] {
-    if (chunks.length <= 1) return chunks
+  if (chunks.length <= 1) return chunks
 
-    const unique: RankedChunk[] = []
+  const unique: RankedChunk[] = []
 
-    for (const chunk of chunks) {
-        const dupIdx = unique.findIndex(existing =>
-            textSimilarity(existing.content, chunk.content, locale) > similarityThreshold
-        )
+  for (const chunk of chunks) {
+    const dupIdx = unique.findIndex(
+      (existing) =>
+        textSimilarity(existing.content, chunk.content, locale) >
+        similarityThreshold,
+    )
 
-        if (dupIdx === -1) {
-            unique.push(chunk)
-        } else {
-            // keep the better one
-            if ((chunk.rerankScore ?? 0) > (unique[dupIdx].rerankScore ?? 0)) {
-                unique[dupIdx] = chunk
-            }
-        }
+    if (dupIdx === -1) {
+      unique.push(chunk)
+    } else {
+      // keep the better one
+      if ((chunk.rerankScore ?? 0) > (unique[dupIdx].rerankScore ?? 0)) {
+        unique[dupIdx] = chunk
+      }
     }
+  }
 
-    return unique
+  return unique
 }
 
 /**
@@ -405,16 +439,19 @@ export function deduplicateChunks(
  *
  * SOTA: Uses unified English template - AI model translates based on conversation context.
  * Works for ALL languages automatically, not just PT/EN/JA/ZH.
- * 
+ *
  * NOTE: Returns plain text WITHOUT brackets. The caller wraps it if needed.
  */
-export function buildNoContextMessage(lang: string, canSearchDeeper: boolean): string {
-    // The AI model will naturally respond in the user's language based on the conversation
-    // This message is embedded in the context, and the language directive in the main prompt
-    // ensures the response language matches
-    return canSearchDeeper
-        ? `No direct answer found in current excerpts. Offer to search deeper in other chapters.`
-        : `No direct answer found in the book for this question, even after deeper search.`
+export function buildNoContextMessage(
+  lang: string,
+  canSearchDeeper: boolean,
+): string {
+  // The AI model will naturally respond in the user's language based on the conversation
+  // This message is embedded in the context, and the language directive in the main prompt
+  // ensures the response language matches
+  return canSearchDeeper
+    ? `No direct answer found in current excerpts. Offer to search deeper in other chapters.`
+    : `No direct answer found in the book for this question, even after deeper search.`
 }
 
 /**
@@ -422,20 +459,83 @@ export function buildNoContextMessage(lang: string, canSearchDeeper: boolean): s
  * Uses ASCII-safe regex to avoid crashes on older engines.
  */
 function extractCoreKeywords(q: string): string[] {
-    const STOP = new Set([
-        // en
-        'the', 'a', 'an', 'of', 'to', 'in', 'on', 'for', 'with', 'without', 'between', 'what', 'why', 'how', 'when', 'where', 'which', 'who', 'is', 'are', 'was', 'were', 'do', 'does', 'did',
-        // pt (normalized - no accents)
-        'o', 'a', 'os', 'as', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas', 'para', 'por', 'com', 'sem', 'sobre', 'entre', 'que', 'como', 'quando', 'onde', 'porque', 'porque', 'qual', 'quais', 'quem', 'e', 'sao', 'foi', 'foram', 'ser', 'estar', 'tem', 'tem'
-    ])
+  const STOP = new Set([
+    // en
+    'the',
+    'a',
+    'an',
+    'of',
+    'to',
+    'in',
+    'on',
+    'for',
+    'with',
+    'without',
+    'between',
+    'what',
+    'why',
+    'how',
+    'when',
+    'where',
+    'which',
+    'who',
+    'is',
+    'are',
+    'was',
+    'were',
+    'do',
+    'does',
+    'did',
+    // pt (normalized - no accents)
+    'o',
+    'a',
+    'os',
+    'as',
+    'de',
+    'do',
+    'da',
+    'dos',
+    'das',
+    'em',
+    'no',
+    'na',
+    'nos',
+    'nas',
+    'para',
+    'por',
+    'com',
+    'sem',
+    'sobre',
+    'entre',
+    'que',
+    'como',
+    'quando',
+    'onde',
+    'porque',
+    'porque',
+    'qual',
+    'quais',
+    'quem',
+    'e',
+    'sao',
+    'foi',
+    'foram',
+    'ser',
+    'estar',
+    'tem',
+    'tem',
+  ])
 
-    // ASCII-safe regex: Latin + Latin Extended (covers PT/FR/DE/ES accents) + CJK
-    const normalized = normalizeDiacritics((q || '').toLowerCase())
-    return normalized
-        .replace(/[^A-Za-z0-9\u00C0-\u024F\u1E00-\u1EFF\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\s]/gu, ' ')
-        .split(/\s+/)
-        .filter(w => w.length >= 3 && !STOP.has(w))
-        .slice(0, 8)
+  // ASCII-safe regex: Latin + Latin Extended (covers PT/FR/DE/ES accents) + CJK
+  const normalized = normalizeDiacritics((q || '').toLowerCase())
+  return normalized
+    .replace(
+      /[^A-Za-z0-9\u00C0-\u024F\u1E00-\u1EFF\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\s]/gu,
+      ' ',
+    )
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !STOP.has(w))
+    .slice(0, 8)
 }
 
 /**
@@ -444,46 +544,50 @@ function extractCoreKeywords(q: string): string[] {
  * because embeddings capture semantic meaning regardless of surface language.
  */
 export function generateQueryVariations(
-    query: string,
-    lang: string,  // Now accepts any language
-    intent?: string
+  query: string,
+  lang: string, // Now accepts any language
+  intent?: string,
 ): string[] {
-    const q = (query || '').trim()
-    if (!q) return []
+  const q = (query || '').trim()
+  if (!q) return []
 
-    const keywords = extractCoreKeywords(q)
-    const core = keywords.join(' ')
-    const variations: string[] = []
+  const keywords = extractCoreKeywords(q)
+  const core = keywords.join(' ')
+  const variations: string[] = []
 
-    // Var 1: keywords only
-    if (core) variations.push(core)
+  // Var 1: keywords only
+  if (core) variations.push(core)
 
-    // Var 2: Intent-based pattern (English keywords work universally for vector search)
-    // The embedding model captures semantic similarity regardless of language
-    const intentKeyword = intent === 'define' ? 'definition'
-        : intent === 'summarize' ? 'summary'
-            : intent === 'analyze' ? 'relationship'
-                : 'explain'
-    variations.push(`${intentKeyword} ${core || q}`)
+  // Var 2: Intent-based pattern (English keywords work universally for vector search)
+  // The embedding model captures semantic similarity regardless of language
+  const intentKeyword =
+    intent === 'define'
+      ? 'definition'
+      : intent === 'summarize'
+      ? 'summary'
+      : intent === 'analyze'
+      ? 'relationship'
+      : 'explain'
+  variations.push(`${intentKeyword} ${core || q}`)
 
-    // Var 3: Quoted term if present
-    const quoted = q.match(/"([^"]{2,60})"/)?.[1]
-    if (quoted) variations.push(quoted)
+  // Var 3: Quoted term if present
+  const quoted = q.match(/"([^"]{2,60})"/)?.[1]
+  if (quoted) variations.push(quoted)
 
-    const uniq: string[] = []
-    for (const v of variations) {
-        const vv = v.trim()
-        if (!vv) continue
-        if (!uniq.some(x => x.toLowerCase() === vv.toLowerCase())) uniq.push(vv)
-    }
+  const uniq: string[] = []
+  for (const v of variations) {
+    const vv = v.trim()
+    if (!vv) continue
+    if (!uniq.some((x) => x.toLowerCase() === vv.toLowerCase())) uniq.push(vv)
+  }
 
-    return uniq.slice(0, 3)
+  return uniq.slice(0, 3)
 }
 
 /**
  * Scrubs citations from body and formats them cleanly into a single footer.
  * Handles both inline [S7:C43] citations and pre-formatted "Sources: S7:C43" footers from LLM.
- * 
+ *
  * BULLETPROOF VERSION v3:
  * - Uses line-based fence parser (correctly handles open/close parity)
  * - Preserves exact fence delimiters (``` or ~~~)
@@ -491,131 +595,232 @@ export function generateQueryVariations(
  * - Protects code blocks from citation removal
  */
 export function normalizeCitationsToFooter(text: string): string {
-    if (!text) return text
+  if (!text) return text
 
-    // 1) Extract existing footer if present (strict: must be on its own line or at start)
-    // Matches: "\nSources: S7:C43" or "^Sources: S7:C43" at very end
-    const FOOTER_RE = /(?:^|[\r\n])\s*(?:Sources|Fontes):\s*([^\r\n]*)$/i
-    const footerMatch = text.match(FOOTER_RE)
+  // 1) Extract existing footer if present (strict: must be on its own line or at start)
+  // Matches: "\nSources: S7:C43" or "^Sources: S7:C43" at very end
+  const FOOTER_RE = /(?:^|[\r\n])\s*(?:Sources|Fontes):\s*([^\r\n]*)$/i
+  const footerMatch = text.match(FOOTER_RE)
 
-    // Parse citations from footer (handles both S7:C43 and [S7:C43] formats)
-    const existingFooterCitations = footerMatch?.[1]?.match(/S\d+:C\d+/g) ?? []
+  // Parse citations from footer (handles both S7:C43 and [S7:C43] formats)
+  const existingFooterCitations = footerMatch?.[1]?.match(/S\d+:C\d+/g) ?? []
 
-    // 2) Remove existing footer for clean processing
-    let cleaned = text.replace(FOOTER_RE, '').trimEnd()
+  // 2) Remove existing footer for clean processing
+  let cleaned = text.replace(FOOTER_RE, '').trimEnd()
 
-    // 3) Line-based fence parser - correctly tracks open/close state
-    const lines = cleaned.split(/\r?\n/)
-    const collected = new Set<string>()
-    let inCodeBlock = false
-    let currentFence = ''
-    const outputLines: string[] = []
+  // 3) Line-based fence parser - correctly tracks open/close state
+  const lines = cleaned.split(/\r?\n/)
+  const collected = new Set<string>()
+  let inCodeBlock = false
+  let currentFence = ''
+  const outputLines: string[] = []
 
-    // Add existing footer citations first
-    for (const c of existingFooterCitations) {
-        collected.add(`[${c}]`)
+  // Add existing footer citations first
+  for (const c of existingFooterCitations) {
+    collected.add(`[${c}]`)
+  }
+
+  for (const line of lines) {
+    // Check for fence at start of line (with optional leading whitespace)
+    const fenceMatch = line.match(/^(\s*)(```|~~~)(.*)$/)
+
+    if (fenceMatch) {
+      const fence = fenceMatch[2]
+
+      if (!inCodeBlock) {
+        // Opening fence
+        inCodeBlock = true
+        currentFence = fence
+        outputLines.push(line) // Keep fence line as-is
+      } else if (fence === currentFence) {
+        // Closing fence (same delimiter)
+        inCodeBlock = false
+        currentFence = ''
+        outputLines.push(line) // Keep fence line as-is
+      } else {
+        // Different fence inside code block - treat as content
+        outputLines.push(line)
+      }
+      continue
     }
 
-    for (const line of lines) {
-        // Check for fence at start of line (with optional leading whitespace)
-        const fenceMatch = line.match(/^(\s*)(```|~~~)(.*)$/)
+    if (inCodeBlock) {
+      // Inside code block - don't touch
+      outputLines.push(line)
+    } else {
+      // Outside code block - process citations
+      // Collect inline [S7:C43] citations
+      const matches = line.match(/\[S\d+:C\d+\]/g) || []
+      for (const m of matches) collected.add(m)
 
-        if (fenceMatch) {
-            const fence = fenceMatch[2]
+      // Remove inline citations and clean up
+      const processedLine = line
+        .replace(/\s*\[S\d+:C\d+\]/g, '')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\s+([.,;:!?])/g, '$1')
 
-            if (!inCodeBlock) {
-                // Opening fence
-                inCodeBlock = true
-                currentFence = fence
-                outputLines.push(line) // Keep fence line as-is
-            } else if (fence === currentFence) {
-                // Closing fence (same delimiter)
-                inCodeBlock = false
-                currentFence = ''
-                outputLines.push(line) // Keep fence line as-is
-            } else {
-                // Different fence inside code block - treat as content
-                outputLines.push(line)
-            }
-            continue
-        }
-
-        if (inCodeBlock) {
-            // Inside code block - don't touch
-            outputLines.push(line)
-        } else {
-            // Outside code block - process citations
-            // Collect inline [S7:C43] citations
-            const matches = line.match(/\[S\d+:C\d+\]/g) || []
-            for (const m of matches) collected.add(m)
-
-            // Remove inline citations and clean up
-            const processedLine = line
-                .replace(/\s*\[S\d+:C\d+\]/g, '')
-                .replace(/[ \t]{2,}/g, ' ')
-                .replace(/\s+([.,;:!?])/g, '$1')
-
-            outputLines.push(processedLine)
-        }
+      outputLines.push(processedLine)
     }
+  }
 
-    // Rejoin lines
-    cleaned = outputLines.join('\n')
-        .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
-        .trim()
+  // Rejoin lines
+  cleaned = outputLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
+    .trim()
 
-    // 4) If no citations at all, return clean text
-    if (collected.size === 0) return cleaned
+  // 4) If no citations at all, return clean text
+  if (collected.size === 0) return cleaned
 
-    // 5) Format sources as clickable links
-    const sources = Array.from(collected)
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-        .map(s => {
-            const id = s.replace(/[[\]]/g, '')
-            return `[${id}](cfi://${id})`
-        })
+  // 5) Format sources as clickable links
+  const sources = Array.from(collected)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map((s) => {
+      const id = s.replace(/[[\]]/g, '')
+      return `[${id}](cfi://${id})`
+    })
 
-    return `${cleaned}\n\nSources: ${sources.join(', ')}`
+  return `${cleaned}\n\nSources: ${sources.join(', ')}`
+}
+
+export interface CitationAuditResult {
+  ok: boolean
+  reasons: string[]
+  sourceIds: string[]
+  missingSourceIds: string[]
+  quotes: string[]
+  matchedQuotes: number
+}
+
+function normalizeAuditText(text: string): string {
+  return normalizeDiacritics(String(text || '').toLowerCase())
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractSourceIds(text: string): string[] {
+  const ids = text.match(/S\d+:C\d+/g) || []
+  return Array.from(new Set(ids))
+}
+
+function extractQuotedPassages(text: string, minChars = 12): string[] {
+  const quoted: string[] = []
+  const rx = /"([^"\n]{1,260})"|“([^”\n]{1,260})”|«([^»\n]{1,260})»/g
+  let m: RegExpExecArray | null
+  while ((m = rx.exec(text)) !== null) {
+    const q = (m[1] || m[2] || m[3] || '').trim()
+    if (q.length >= minChars) quoted.push(q)
+  }
+  return Array.from(new Set(quoted))
+}
+
+export function auditResponseCitations(
+  responseText: string,
+  contextChunks: VectorRecord[],
+  opts?: {
+    requireQuotes?: boolean
+    minQuoteChars?: number
+    minMatchedQuotes?: number
+  },
+): CitationAuditResult {
+  const requireQuotes = opts?.requireQuotes ?? true
+  const minQuoteChars = opts?.minQuoteChars ?? 18
+  const minMatchedQuotes = opts?.minMatchedQuotes ?? 1
+
+  const reasons: string[] = []
+  const sourceIds = extractSourceIds(responseText)
+  const quotes = extractQuotedPassages(responseText, minQuoteChars)
+  const byId = new Map<string, string>()
+
+  for (const chunk of contextChunks) {
+    const sec = Number(chunk?.metadata?.sectionIndex ?? 0)
+    const id = `S${sec}:C${chunk.index}`
+    byId.set(id, normalizeAuditText(chunk.content || ''))
+  }
+
+  if (sourceIds.length === 0) {
+    reasons.push('missing_sources_footer')
+  }
+
+  const missingSourceIds = sourceIds.filter((id) => !byId.has(id))
+  if (missingSourceIds.length > 0) {
+    reasons.push('invalid_source_ids')
+  }
+
+  if (requireQuotes && quotes.length === 0) {
+    reasons.push('missing_quotes')
+  }
+
+  let matchedQuotes = 0
+  if (quotes.length > 0 && sourceIds.length > 0) {
+    const citedContents = sourceIds
+      .map((id) => byId.get(id))
+      .filter((v): v is string => !!v)
+
+    for (const quote of quotes) {
+      const q = normalizeAuditText(quote)
+      if (!q) continue
+      const hit = citedContents.some((content) => content.includes(q))
+      if (hit) matchedQuotes++
+    }
+  }
+
+  if (
+    quotes.length > 0 &&
+    matchedQuotes < Math.min(minMatchedQuotes, quotes.length)
+  ) {
+    reasons.push('quotes_not_grounded')
+  }
+
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    sourceIds,
+    missingSourceIds,
+    quotes,
+    matchedQuotes,
+  }
 }
 
 /**
  * Estimates token count from character count
  * Rough approximation: ~4 chars per token for English, ~3 for other languages
- * 
+ *
  * @param text - Text to estimate
  * @returns Estimated token count
  */
 export function estimateTokens(text: string): number {
-    // Check if text contains significant non-ASCII (likely non-English)
-    // Using charCodeAt to avoid ESLint no-control-regex warning
-    let nonAsciiCount = 0
-    for (let i = 0; i < text.length; i++) {
-        if (text.charCodeAt(i) > 127) nonAsciiCount++
-    }
-    const nonAsciiRatio = text.length > 0 ? nonAsciiCount / text.length : 0
-    const charsPerToken = nonAsciiRatio > 0.1 ? 3 : 4
+  // Check if text contains significant non-ASCII (likely non-English)
+  // Using charCodeAt to avoid ESLint no-control-regex warning
+  let nonAsciiCount = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 127) nonAsciiCount++
+  }
+  const nonAsciiRatio = text.length > 0 ? nonAsciiCount / text.length : 0
+  const charsPerToken = nonAsciiRatio > 0.1 ? 3 : 4
 
-    return Math.ceil(text.length / charsPerToken)
+  return Math.ceil(text.length / charsPerToken)
 }
 
 /**
  * Logs retrieval statistics for debugging and optimization
  */
 export function logRetrievalStats(
-    query: string,
-    params: RetrievalParams,
-    chunksRetrieved: number,
-    finalContextChars: number
+  query: string,
+  params: RetrievalParams,
+  chunksRetrieved: number,
+  finalContextChars: number,
 ): void {
-    if (process.env.NODE_ENV === 'development') {
-        console.log('[RAG Stats]', {
-            query: query.slice(0, 50) + (query.length > 50 ? '...' : ''),
-            params,
-            chunksRetrieved,
-            finalContextChars,
-            estimatedTokens: estimateTokens(query) + Math.ceil(finalContextChars / 4)
-        })
-    }
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[RAG Stats]', {
+      query: query.slice(0, 50) + (query.length > 50 ? '...' : ''),
+      params,
+      chunksRetrieved,
+      finalContextChars,
+      estimatedTokens: estimateTokens(query) + Math.ceil(finalContextChars / 4),
+    })
+  }
 }
 
 // ============================================================================
@@ -626,71 +831,84 @@ export function logRetrievalStats(
 /**
  * Intent types for reading assistance
  */
-export type ReadingIntent = 'explain' | 'summarize' | 'define' | 'analyze' | 'concept' | 'question' | 'general'
+export type ReadingIntent =
+  | 'explain'
+  | 'summarize'
+  | 'define'
+  | 'analyze'
+  | 'concept'
+  | 'question'
+  | 'general'
 
 /**
  * Response length guidelines per intent and depth
  */
-export function getResponseLimits(intent: ReadingIntent, depth: 'short' | 'balanced' | 'deep'): {
-    maxSentences: number;
-    style: string;
-    useBullets: boolean;
+export function getResponseLimits(
+  intent: ReadingIntent,
+  depth: 'short' | 'balanced' | 'deep',
+): {
+  maxSentences: number
+  style: string
+  useBullets: boolean
 } {
-    const limits: Record<ReadingIntent, Record<'short' | 'balanced' | 'deep', number>> = {
-        question: { short: 1, balanced: 2, deep: 5 },
-        define: { short: 1, balanced: 2, deep: 5 },
-        explain: { short: 2, balanced: 4, deep: 10 },
-        summarize: { short: 3, balanced: 5, deep: 10 },
-        analyze: { short: 3, balanced: 6, deep: 12 },
-        concept: { short: 3, balanced: 7, deep: 14 },
-        general: { short: 2, balanced: 4, deep: 8 },
-    }
+  const limits: Record<
+    ReadingIntent,
+    Record<'short' | 'balanced' | 'deep', number>
+  > = {
+    question: { short: 1, balanced: 2, deep: 5 },
+    define: { short: 1, balanced: 2, deep: 5 },
+    explain: { short: 2, balanced: 4, deep: 10 },
+    summarize: { short: 3, balanced: 5, deep: 10 },
+    analyze: { short: 3, balanced: 6, deep: 12 },
+    concept: { short: 3, balanced: 7, deep: 14 },
+    general: { short: 2, balanced: 4, deep: 8 },
+  }
 
-    const styleMap: Record<ReadingIntent, string> = {
-        explain: 'clear and educational',
-        summarize: 'bullet points or brief paragraph',
-        define: 'concise definition',
-        analyze: 'structured analysis',
-        concept: 'thorough explanation with examples',
-        question: 'direct answer',
-        general: 'concise and helpful'
-    }
+  const styleMap: Record<ReadingIntent, string> = {
+    explain: 'clear and educational',
+    summarize: 'bullet points or brief paragraph',
+    define: 'concise definition',
+    analyze: 'structured analysis',
+    concept: 'thorough explanation with examples',
+    question: 'direct answer',
+    general: 'concise and helpful',
+  }
 
-    return {
-        maxSentences: limits[intent][depth],
-        style: styleMap[intent],
-        useBullets: (intent === 'summarize' || depth === 'deep')
-    }
+  return {
+    maxSentences: limits[intent][depth],
+    style: styleMap[intent],
+    useBullets: intent === 'summarize' || depth === 'deep',
+  }
 }
 
 /**
  * System prompts optimized for reading assistance
  */
 export const READING_SYSTEM_PROMPTS: Record<ReadingIntent, string> = {
-    explain: `You are a reading assistant helping someone understand a book passage.
+  explain: `You are a reading assistant helping someone understand a book passage.
 Rules:
 - Base your answer ONLY on the provided excerpts.
 - Do NOT place citations inline. Collect chunk IDs like [S3:C120] and list them ONLY at the very end of your response as "Sources: ID, ID".
 - If the answer isn't in the excerpts, say so clearly.
 Style: Clear, educational, but concise.`,
 
-    summarize: `You are a reading assistant helping someone quickly grasp content.
+  summarize: `You are a reading assistant helping someone quickly grasp content.
 Rules:
 - Base your summary ONLY on the provided excerpts.
 - No inline citations. Add a single "Sources:" footer at the very end.
 Style: Bullet points when helpful.`,
 
-    define: `You are a reading assistant helping with vocabulary and concepts.
+  define: `You are a reading assistant helping with vocabulary and concepts.
 Rules:
 - Define terms using ONLY the excerpts when possible.
 - No inline citations. Add a single "Sources:" footer at the very end.`,
 
-    analyze: `You are a reading assistant helping with deeper understanding.
+  analyze: `You are a reading assistant helping with deeper understanding.
 Rules:
 - Every insight must be backed by the provided text.
 - No inline citations. Add a single "Sources:" footer at the very end.`,
 
-    concept: `You are a reading assistant helping someone deeply understand a core concept from the book.
+  concept: `You are a reading assistant helping someone deeply understand a core concept from the book.
 
 Format your response EXACTLY like this (with blank lines between sections):
 
@@ -708,87 +926,101 @@ Rules:
 - Follow the structure above strictly.
 - No inline citations. Add a single "Sources:" footer at the very end.`,
 
-    question: `You are a reading assistant answering questions about a book.
+  question: `You are a reading assistant answering questions about a book.
 Rules:
 - Be extremely factual.
 - Use paragraph breaks between distinct points or ideas.
 - No inline citations. Add a single "Sources:" footer at the very end.
 - If not found, say that the information is not present in the current excerpts (in the user's language).`,
 
-    general: `You are a helpful reading assistant for an ebook reader app.
+  general: `You are a helpful reading assistant for an ebook reader app.
 Rules:
 - Always prioritize information from the book excerpts.
 - Use paragraph breaks to organize your response clearly.
-- No inline citations. Add a single "Sources:" footer at the very end.`
+- No inline citations. Add a single "Sources:" footer at the very end.`,
 }
 
 /**
  * Builds a reading-optimized system prompt with depth and scope awareness
  */
 export function buildReadingSystemPrompt(
-    intent: ReadingIntent,
-    settings: {
-        depth: 'short' | 'balanced' | 'deep';
-        scope: 'book_only' | 'book_plus_discussion';
-        persona?: string;
-        customPrompt?: string;
-        // v3.11: Metadata integration
-        bookSubject?: string | string[];
-    }
+  intent: ReadingIntent,
+  settings: {
+    depth: 'short' | 'balanced' | 'deep'
+    scope: 'book_only' | 'book_plus_discussion'
+    persona?: string
+    customPrompt?: string
+    // v3.11: Metadata integration
+    bookSubject?: string | string[]
+  },
 ): string {
-    const limits = getResponseLimits(intent, settings.depth)
-    const base = READING_SYSTEM_PROMPTS[intent]
+  const limits = getResponseLimits(intent, settings.depth)
+  const base = READING_SYSTEM_PROMPTS[intent]
 
-    // v3.11: Adaptive Persona based on Genre
-    let adaptivePersona = "helpful reading assistant"
-    let subjectInstruction = ""
+  // v3.11: Adaptive Persona based on Genre
+  let adaptivePersona = 'helpful reading assistant'
+  let subjectInstruction = ''
 
-    if (settings.bookSubject) {
-        const subjects = Array.isArray(settings.bookSubject)
-            ? settings.bookSubject.join(' ').toLowerCase()
-            : settings.bookSubject.toLowerCase()
+  if (settings.bookSubject) {
+    const subjects = Array.isArray(settings.bookSubject)
+      ? settings.bookSubject.join(' ').toLowerCase()
+      : settings.bookSubject.toLowerCase()
 
-        if (subjects.includes('fiction') || subjects.includes('literature')) {
-            adaptivePersona = "literary companion"
-            subjectInstruction = "Focus on narrative arcs, character development, and themes."
-        } else if (subjects.includes('science') || subjects.includes('technology')) {
-            adaptivePersona = "technical tutor"
-            subjectInstruction = "Be precise, analytical, and explain technical terms clearly."
-        } else if (subjects.includes('philosophy') || subjects.includes('psychology')) {
-            adaptivePersona = "discussion partner"
-            subjectInstruction = "Encourage critical thinking and explore underlying concepts."
-        } else if (subjects.includes('history')) {
-            adaptivePersona = "historian assistant"
-            subjectInstruction = "Contextualize events and focus on chronology and cause-effect."
-        }
+    if (subjects.includes('fiction') || subjects.includes('literature')) {
+      adaptivePersona = 'literary companion'
+      subjectInstruction =
+        'Focus on narrative arcs, character development, and themes.'
+    } else if (
+      subjects.includes('science') ||
+      subjects.includes('technology')
+    ) {
+      adaptivePersona = 'technical tutor'
+      subjectInstruction =
+        'Be precise, analytical, and explain technical terms clearly.'
+    } else if (
+      subjects.includes('philosophy') ||
+      subjects.includes('psychology')
+    ) {
+      adaptivePersona = 'discussion partner'
+      subjectInstruction =
+        'Encourage critical thinking and explore underlying concepts.'
+    } else if (subjects.includes('history')) {
+      adaptivePersona = 'historian assistant'
+      subjectInstruction =
+        'Contextualize events and focus on chronology and cause-effect.'
     }
+  }
 
-    let prompt = `
+  let prompt = `
 ${base}
 
 ## Constraints:
 - Language: Respond strictly in the SAME language as the question.
-- Length: Maximum ${limits.maxSentences} ${limits.useBullets ? 'bullets/sentences' : 'sentences'}.
+- Length: Maximum ${limits.maxSentences} ${
+    limits.useBullets ? 'bullets/sentences' : 'sentences'
+  }.
 - Citations: NO inline citations. Collect chunk IDs like [SX:CX] and list them ONLY at the very end of your response as a single "Sources: ID, ID" list.
-- Persona: You are a ${settings.persona || adaptivePersona}. ${subjectInstruction}
+- Persona: You are a ${
+    settings.persona || adaptivePersona
+  }. ${subjectInstruction}
 `
 
-    if (settings.scope === 'book_plus_discussion') {
-        prompt += `
+  if (settings.scope === 'book_plus_discussion') {
+    prompt += `
 - Scope: You are ENCOURAGED to provide analogies, practical examples, and outside-book context. 
 - Structure: Always separate your answer into two clear blocks:
   1. "Based on the book": Strict RAG answer with Sources.
   2. "Discussion & Application": Broad context (labeled as extrapolation).
 `
-    } else {
-        prompt += `- Scope: STRICT RAG. Base your answer ONLY on the excerpts provided. If not found, say that the information is not present in the current excerpts, in the same language as the question.`
-    }
+  } else {
+    prompt += `- Scope: STRICT RAG. Base your answer ONLY on the excerpts provided. If not found, say that the information is not present in the current excerpts, in the same language as the question.`
+  }
 
-    if (settings.customPrompt?.trim()) {
-        prompt += `\n\nAdditional Instructions: ${settings.customPrompt}`
-    }
+  if (settings.customPrompt?.trim()) {
+    prompt += `\n\nAdditional Instructions: ${settings.customPrompt}`
+  }
 
-    return prompt
+  return prompt
 }
 
 /**
@@ -796,67 +1028,69 @@ ${base}
  * Groups excerpts by section for better reading context
  */
 export function buildReadingUserPrompt(
-    query: string,
-    chunks: any[],
-    intent: ReadingIntent,
-    _depth: 'short' | 'balanced' | 'deep' = 'balanced',
-    lang = 'en',
-    canSearchDeeper = false,
-    extras?: {
-        annotations?: string[],
-        definitions?: string[]
-    }
+  query: string,
+  chunks: any[],
+  intent: ReadingIntent,
+  _depth: 'short' | 'balanced' | 'deep' = 'balanced',
+  lang = 'en',
+  canSearchDeeper = false,
+  extras?: {
+    annotations?: string[]
+    definitions?: string[]
+  },
 ): string {
-    // Group and Sort by Reading Order
-    const sorted = [...chunks].sort((a, b) => {
-        const aSec = a.metadata?.sectionIndex ?? 0
-        const bSec = b.metadata?.sectionIndex ?? 0
-        if (aSec !== bSec) return aSec - bSec
-        return a.index - b.index
-    })
+  // Group and Sort by Reading Order
+  const sorted = [...chunks].sort((a, b) => {
+    const aSec = a.metadata?.sectionIndex ?? 0
+    const bSec = b.metadata?.sectionIndex ?? 0
+    if (aSec !== bSec) return aSec - bSec
+    return a.index - b.index
+  })
 
-    let excerpts = ""
-    let currentSection = -1
+  let excerpts = ''
+  let currentSection = -1
 
-    for (const c of sorted) {
-        const sec = typeof c.metadata?.sectionIndex === 'number' && c.metadata.sectionIndex >= 0
-            ? c.metadata.sectionIndex
-            : 0
+  for (const c of sorted) {
+    const sec =
+      typeof c.metadata?.sectionIndex === 'number' &&
+      c.metadata.sectionIndex >= 0
+        ? c.metadata.sectionIndex
+        : 0
 
-        if (sec !== currentSection) {
-            currentSection = sec
-            const title = c.metadata?.sectionTitle || `Section ${currentSection}`
-            excerpts += `\n[--- ${title} ---]\n`
-        }
-        excerpts += `[S${currentSection}:C${c.index}]: ${c.content}\n\n`
+    if (sec !== currentSection) {
+      currentSection = sec
+      const title = c.metadata?.sectionTitle || `Section ${currentSection}`
+      excerpts += `\n[--- ${title} ---]\n`
     }
+    excerpts += `[S${currentSection}:C${c.index}]: ${c.content}\n\n`
+  }
 
-    // v3.11: Inject User Context
-    let userContextBlock = ""
-    if (extras?.annotations?.length || extras?.definitions?.length) {
-        userContextBlock = `
+  // v3.11: Inject User Context
+  let userContextBlock = ''
+  if (extras?.annotations?.length || extras?.definitions?.length) {
+    userContextBlock = `
 USER'S NOTES & VOCABULARY (Prioritize these if relevant):
 ---
-${extras.definitions?.map(d => `[Defined Term]: ${d}`).join('\n') || ''}
-${extras.annotations?.map(a => `[User Note]: ${a}`).join('\n') || ''}
+${extras.definitions?.map((d) => `[Defined Term]: ${d}`).join('\n') || ''}
+${extras.annotations?.map((a) => `[User Note]: ${a}`).join('\n') || ''}
 ---
 `
-    }
+  }
 
-    const noContextMessage = buildNoContextMessage(lang, canSearchDeeper)
-    const effectiveContext = excerpts.trim() || `[${noContextMessage}]`
+  const noContextMessage = buildNoContextMessage(lang, canSearchDeeper)
+  const effectiveContext = excerpts.trim() || `[${noContextMessage}]`
 
-    // SOTA: Unified English guidelines with language directive
-    // Works for ALL languages - the AI model will translate naturally
-    const langName = displayLangName(lang)
-    const guidelines = `Guidelines:
+  // SOTA: Unified English guidelines with language directive
+  // Works for ALL languages - the AI model will translate naturally
+  const langName = displayLangName(lang)
+  const guidelines = `Guidelines:
 - Respond in ${langName} (the user's language).
 - Use "USER'S NOTES" to personalize the answer if applicable.
 - Do NOT put IDs inside sentences.
 - End with one line: "Sources: Sx:Cx, Sx:Cx".
 - If you add "Discussion", explicitly label it as outside the book.`
 
-    return `Question: ${query}
+  return `Question: ${query}
 
 ${userContextBlock}
 
@@ -880,35 +1114,44 @@ ${guidelines}`
  * @returns Formatted prompt for selection action
  */
 export function buildSelectionActionPrompt(
-    action: 'explain' | 'summarize',
-    selectedText: string,
-    context: string,
-    lang = 'en'  // Now accepts any language
+  action: 'explain' | 'summarize',
+  selectedText: string,
+  context: string,
+  lang = 'en', // Now accepts any language
 ): { system: string; user: string } {
-    const langName = displayLangName(lang)
+  const langName = displayLangName(lang)
 
-    // Unified English system prompt with language directive
-    const system = action === 'explain'
-        ? `You are a reading assistant. Explain the selected text clearly and concisely (2-3 sentences). Focus on what the reader needs to understand. Respond in ${langName}.`
-        : `You are a reading assistant. Summarize the selected text in 1-2 sentences. Capture only the essential meaning. Respond in ${langName}.`
+  // Unified English system prompt with language directive
+  const system =
+    action === 'explain'
+      ? `You are a reading assistant. Explain the selected text clearly and concisely (2-3 sentences). Focus on what the reader needs to understand. Respond in ${langName}.`
+      : `You are a reading assistant. Summarize the selected text in 1-2 sentences. Capture only the essential meaning. Respond in ${langName}.`
 
-    // Unified English user prompt structure
-    const user = `Selected text: "${selectedText}"
+  // Unified English user prompt structure
+  const user = `Selected text: "${selectedText}"
 
-${context ? `Surrounding context:\n---\n${context}\n---\n\n` : ''}${action === 'explain' ? 'Explain this briefly:' : 'Summarize in 1-2 sentences:'}`
+${context ? `Surrounding context:\n---\n${context}\n---\n\n` : ''}${
+    action === 'explain'
+      ? 'Explain this briefly:'
+      : 'Summarize in 1-2 sentences:'
+  }`
 
-    return { system, user }
+  return { system, user }
 }
 
 /**
  * Estimates if a response is too long and should be truncated
- * 
+ *
  * @param response - The AI response
  * @param intent - The original intent
  * @returns Whether the response exceeds recommended length
  */
-export function isResponseTooLong(response: string, intent: ReadingIntent, depth: 'short' | 'balanced' | 'deep'): boolean {
-    const limits = getResponseLimits(intent, depth)
-    const sentenceCount = (response.match(/[.!?]+/g) || []).length
-    return sentenceCount > limits.maxSentences * 1.5
+export function isResponseTooLong(
+  response: string,
+  intent: ReadingIntent,
+  depth: 'short' | 'balanced' | 'deep',
+): boolean {
+  const limits = getResponseLimits(intent, depth)
+  const sentenceCount = (response.match(/[.!?]+/g) || []).length
+  return sentenceCount > limits.maxSentences * 1.5
 }

@@ -5,7 +5,7 @@ import { BookRecord } from '../db'
 import { useTranslation } from '../hooks'
 
 import { BookMenu } from './BookMenu'
-import { LumenSparkleIcon } from './icons/ProviderIcons'
+import { IndexedIcon } from './icons/ProviderIcons'
 
 export interface BookCardProps {
   book: BookRecord
@@ -55,8 +55,8 @@ export const BookCard: React.FC<BookCardProps> = ({
           )}
 
           {isIndexed && (
-            <div className="size-5 absolute -bottom-1 -right-1 flex items-center justify-center rounded-md bg-primary/90 text-on-primary shadow-lg shadow-primary/40 backdrop-blur-sm border border-white/20 animate-in fade-in zoom-in duration-300">
-              <LumenSparkleIcon className="text-[10px]" />
+            <div className="size-5 from-primary shadow-primary/30 animate-in fade-in zoom-in absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-gradient-to-br to-blue-600 text-white shadow-md backdrop-blur-sm duration-300">
+              <IndexedIcon className="text-[14px]" />
             </div>
           )}
         </div>
@@ -115,8 +115,8 @@ export const BookCard: React.FC<BookCardProps> = ({
         )}
 
         {isIndexed && (
-          <div className="size-7 absolute bottom-10 right-2 z-10 flex items-center justify-center rounded-xl bg-primary/80 text-on-primary shadow-xl shadow-primary/30 backdrop-blur-md border border-white/20 animate-in fade-in zoom-in duration-500">
-            <LumenSparkleIcon className="text-lg" />
+          <div className="size-8 from-primary shadow-primary/30 animate-in fade-in zoom-in absolute bottom-4 right-2 z-10 flex items-center justify-center rounded-md bg-gradient-to-br to-blue-600 text-white shadow-lg backdrop-blur-md duration-300">
+            <IndexedIcon className="animate-pulse-slow text-xl" />
           </div>
         )}
 

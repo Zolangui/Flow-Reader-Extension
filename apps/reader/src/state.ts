@@ -129,7 +129,10 @@ const defaultChatbotState: ChatbotState = {
   meta: defaultChatbotMeta,
 }
 
-function chatbotStorageEffect(key: string, defaultValue: ChatbotState): AtomEffect<ChatbotState> {
+function chatbotStorageEffect(
+  key: string,
+  defaultValue: ChatbotState,
+): AtomEffect<ChatbotState> {
   return ({ setSelf, onSet }) => {
     if (IS_SERVER) return
 
@@ -147,7 +150,9 @@ function chatbotStorageEffect(key: string, defaultValue: ChatbotState): AtomEffe
             ...defaultValue.meta,
             ...(parsed.meta || {}),
           },
-          messages: Array.isArray(parsed.messages) ? (parsed.messages as any) : defaultValue.messages,
+          messages: Array.isArray(parsed.messages)
+            ? (parsed.messages as any)
+            : defaultValue.messages,
         }
         setSelf(merged)
       } catch {
@@ -156,7 +161,9 @@ function chatbotStorageEffect(key: string, defaultValue: ChatbotState): AtomEffe
     }
 
     onSet((newValue, _, isReset) => {
-      isReset ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(newValue))
+      isReset
+        ? localStorage.removeItem(key)
+        : localStorage.setItem(key, JSON.stringify(newValue))
     })
   }
 }
@@ -180,7 +187,8 @@ export const defaultAIConfig: AISettings = {
   apiKey: '',
   model: 'gemini-1.5-flash',
   temperature: 0.3,
-  systemPrompt: 'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',
+  systemPrompt:
+    'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',
   baseUrl: '',
   autoPersona: false,
   insightTriggers: false,
@@ -189,6 +197,7 @@ export const defaultAIConfig: AISettings = {
   summarizeSelection: true,
   answerDepth: 'balanced',
   aiScope: 'book_only',
+  downloadLocalModels: true,
 }
 
 export const aiSettingsState = atom<AISettings>({

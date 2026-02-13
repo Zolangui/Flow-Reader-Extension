@@ -7,7 +7,8 @@ import type { AppProps } from 'next/app'
 import { useRouter } from 'next/router'
 import { RecoilRoot } from 'recoil'
 
-import { Layout, Theme } from '../components'
+import { Layout } from '../components/Layout'
+import { Theme } from '../components/Theme'
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   const router = useRouter()

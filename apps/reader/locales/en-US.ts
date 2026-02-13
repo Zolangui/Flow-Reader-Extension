@@ -203,7 +203,8 @@ export default {
   'ai.temperature': 'Creativity (Temperature)',
   'ai.system_prompt': 'System Prompt',
   'ai.auto_persona': 'Auto Persona',
-  'ai.auto_persona_desc': 'Automatically adapt the AI persona to the book genre.',
+  'ai.auto_persona_desc':
+    'Automatically adapt the AI persona to the book genre.',
   'ai.insight_triggers': 'Insight Suggestions',
   'ai.insight_triggers_desc': 'Show AI-powered insights as you read.',
   'ai.deep_think': 'Advanced Reasoning (Deep Mode)',
@@ -218,14 +219,21 @@ export default {
   'ai.maintenance': 'Maintenance',
   'ai.reindex': 'Re-index Book',
   'ai.reindex_desc': 'Re-process the current book to refresh the AI context.',
+  'ai.confirm_reindex_title': 'Re-index this book?',
+  'ai.confirm_reindex_desc':
+    'This will rebuild the AI index from scratch for the current book.',
+  'ai.confirm_reindex_cancel': 'Cancel',
+  'ai.confirm_reindex_action': 'Re-index',
   'ai.clear_history': 'Clear History',
   'ai.reset_defaults': 'Reset Defaults',
   'ai.reindex_success': 'Book re-indexed successfully.',
   'ai.reindex_error': 'Failed to re-index book.',
   'ai.index.no_book': 'No active book to index.',
-  'ai.index.success': 'Book indexed successfully! The AI can now answer questions about its content.',
+  'ai.index.success':
+    'Book indexed successfully! The AI can now answer questions about its content.',
   'ai.index.failed': 'Indexing failed: {error}',
-  'ai.confirm_reset': 'Reset AI parameters to defaults? (Your API Key and Base URL will be preserved)',
+  'ai.confirm_reset':
+    'Reset AI parameters to defaults? (Your API Key and Base URL will be preserved)',
   'ai.confirm_clear': 'Clear all chat messages and memory for this session?',
   'ai.history_cleared': 'Chat history cleared.',
   'ai.settings_reset': 'Settings reset to default.',
@@ -242,27 +250,39 @@ export default {
   'ai.settings.model_category.powerhouse': 'Powerhouse',
   'ai.settings.model_category.fast': 'Fast / Efficient',
   'ai.settings.model_category.other': 'Other',
-  'ai.settings.model_hint.gemini': 'Best for speed: gemini-1.5-flash. Best for quality: gemini-1.5-pro.',
-  'ai.settings.model_hint.openai': 'Best for speed: gpt-4o-mini. Best for quality: gpt-4o.',
-  'ai.settings.model_hint.anthropic': 'Highly recommended: claude-3-5-sonnet-latest.',
-  'ai.settings.model_hint.local': "Connect to local inference servers like Ollama or LM Studio. No data leaves your machine.",
-  'ai.settings.model_hint.custom': "Connect to any OpenAI-compatible API proxy or specialized endpoint (e.g., OpenRouter, Anyscale).",
+  'ai.settings.model_hint.gemini':
+    'Best for speed: gemini-1.5-flash. Best for quality: gemini-1.5-pro.',
+  'ai.settings.model_hint.openai':
+    'Best for speed: gpt-4o-mini. Best for quality: gpt-4o.',
+  'ai.settings.model_hint.anthropic':
+    'Highly recommended: claude-3-5-sonnet-latest.',
+  'ai.settings.model_hint.local':
+    'Connect to local inference servers like Ollama or LM Studio. No data leaves your machine.',
+  'ai.settings.model_hint.custom':
+    'Connect to any OpenAI-compatible API proxy or specialized endpoint (e.g., OpenRouter, Anyscale).',
   'ai.settings.claude_series': 'Claude Series',
   'ai.settings.api_key_placeholder': 'Paste your key here...',
   'ai.settings.proxy_api_key': 'Proxy API Key (Optional)',
-  'ai.settings.system_prompt_placeholder': 'Describe how the AI should behave...',
+  'ai.settings.system_prompt_placeholder':
+    'Describe how the AI should behave...',
+  'ai.settings.download_models': 'Download Models',
+  'ai.settings.download_models_desc':
+    'Enable to download and run AI models locally for offline use and maximum privacy.',
   'ai.settings.local_models_status': 'Local Models Status',
   'ai.maintenance.refresh_list': 'Refresh List',
   'ai.settings.temperature.precise': 'Precise',
   'ai.settings.temperature.balanced': 'Balanced',
   'ai.settings.temperature.creative': 'Creative',
   'ai.settings.privacy_first': 'Privacy First',
-  'ai.settings.privacy_desc': 'Your API keys and chat history are stored encrypted locally. We never see your data.',
+  'ai.settings.privacy_desc':
+    'Your API keys and chat history are stored encrypted locally. We never see your data.',
   'ai.settings.start_assistant': 'Start Assistant',
   'ai.settings.save_changes': 'Save Changes',
   'ai.settings.enter_api_key_first': 'Please enter an API Key first',
-  'ai.settings.fetch_models_error': 'Could not fetch models. Check your API Key or connectivity.',
-  'ai.settings.adaptive_context_hint': "Define the AI's personality and boundaries. When Adaptive Context is enabled, this will be automatically enhanced based on the book metadata.",
+  'ai.settings.fetch_models_error':
+    'Could not fetch models. Check your API Key or connectivity.',
+  'ai.settings.adaptive_context_hint':
+    "Define the AI's personality and boundaries. When Adaptive Context is enabled, this will be automatically enhanced based on the book metadata.",
 
   // Chatbot UI
   'ai.chatbot.placeholder': 'Ask anything about the book...',
@@ -275,20 +295,27 @@ export default {
   'ai.chatbot.copy_code': 'Copy Code',
   'ai.chatbot.connected_to': 'Connected to',
   'ai.chatbot.welcome_title': 'Welcome to Lumen Read AI',
-  'ai.chatbot.welcome_desc': 'Your personal reading assistant. To start chatting with your books, please configure your AI provider.',
+  'ai.chatbot.welcome_desc':
+    'Your personal reading assistant. To start chatting with your books, please configure your AI provider.',
   'ai.chatbot.disclaimer': 'AI can make mistakes. Verify important info.',
   'ai.chatbot.status_thinking': 'AI is thinking...',
   'ai.chatbot.status_context': 'Building answer from context...',
-  'ai.chatbot.empty_state_desc': 'Ask anything about the current book! Your assistant uses RAG to find relevant chapters and citations.',
-  'ai.chatbot.index_description': "This book hasn't been processed by AI yet. Index it now for semantic search and precise citations.",
+  'ai.chatbot.empty_state_desc':
+    'Ask anything about the current book! Your assistant uses RAG to find relevant chapters and citations.',
+  'ai.chatbot.index_description':
+    "This book hasn't been processed by AI yet. Index it now for semantic search and precise citations.",
   'ai.chatbot.start_indexing': 'Start Indexing',
   'ai.chatbot.indexing_knowledge': 'Processing Knowledge...',
-  'ai.chatbot.indexing_subtext': 'Extracting chapters and generating semantic vectors. This will only take a few seconds.',
+  'ai.chatbot.indexing_subtext':
+    'Extracting chapters and generating semantic vectors. This will only take a few seconds.',
 
   // AI No-Context Messages
-  'ai.no_context.can_search_deeper': "I couldn't find a direct answer in the current excerpts. Would you like me to search deeper in other chapters?",
-  'ai.no_context.final': "I couldn't find a direct answer in the book for this question.",
-  'ai.no_context.index_required': "[No context found. The book may not be indexed. Please go to Settings > Advanced and click 'Re-index Book'.]",
+  'ai.no_context.can_search_deeper':
+    "I couldn't find a direct answer in the current excerpts. Would you like me to search deeper in other chapters?",
+  'ai.no_context.final':
+    "I couldn't find a direct answer in the book for this question.",
+  'ai.no_context.index_required':
+    "[No context found. The book may not be indexed. Please go to Settings > Advanced and click 'Re-index Book'.]",
 
   // AI Error Messages
   'ai.error.circuit_breaker': 'Quota exceeded. Please wait {seconds} seconds.',

@@ -37,7 +37,10 @@ async function build() {
         env: { ...process.env },
       })
     } catch (e) {
-      console.warn('Warning: failed to generate wllama worker assets:', e?.message || e)
+      console.warn(
+        'Warning: failed to generate wllama worker assets:',
+        e?.message || e,
+      )
     }
 
     // 2. Run the static export (SKIP_SENTRY=true and FAST_BUILD=true for speed)
@@ -47,15 +50,19 @@ async function build() {
     const fastBuild = process.env.FAST_BUILD !== 'false'
     const skipSentry = process.env.SKIP_SENTRY !== 'false'
 
-    execSync('pnpm --filter @flow/reader build:export', {
-      stdio: 'inherit',
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        SKIP_SENTRY: skipSentry ? 'true' : 'false',
-        FAST_BUILD: fastBuild ? 'true' : 'false',
+    execSync(
+      'pnpm turbo run build:export --filter=@flow/reader --output-logs=errors-only',
+      {
+        stdio: 'inherit',
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          SKIP_SENTRY: skipSentry ? 'true' : 'false',
+          FAST_BUILD: fastBuild ? 'true' : 'false',
+          NEXT_PUBLIC_IS_EXPORT: 'true',
+        },
       },
-    })
+    )
 
     // 3. Create the dist directory
     await fs.ensureDir(distDir)
@@ -87,11 +94,27 @@ async function build() {
 
       // Copy wllama WASM files
       fs.copy(
-        path.join(readerDir, 'node_modules', '@wllama', 'wllama', 'esm', 'single-thread', 'wllama.wasm'),
+        path.join(
+          readerDir,
+          'node_modules',
+          '@wllama',
+          'wllama',
+          'esm',
+          'single-thread',
+          'wllama.wasm',
+        ),
         path.join(distDir, 'wasm', 'wllama-single.wasm'),
       ),
       fs.copy(
-        path.join(readerDir, 'node_modules', '@wllama', 'wllama', 'esm', 'multi-thread', 'wllama.wasm'),
+        path.join(
+          readerDir,
+          'node_modules',
+          '@wllama',
+          'wllama',
+          'esm',
+          'multi-thread',
+          'wllama.wasm',
+        ),
         path.join(distDir, 'wasm', 'wllama-multi.wasm'),
       ),
     ])

@@ -15,10 +15,8 @@
     },
     "default_title": "Lumen Read"
   },
-  "permissions": [
-    "storage",
-    "identity"
-  ],
+  "permissions": ["storage", "identity"],
+  "optional_permissions": ["trialML"],
   "host_permissions": [
     "*://*.dropboxapi.com/*",
     "https://huggingface.co/*",
@@ -26,12 +24,10 @@
     "https://hf.co/*"
   ],
   "background": {
-    "scripts": [
-      "background.js"
-    ]
+    "scripts": ["background.js"]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval' blob: 'sha256-Fc+vSsMVDhzLFPavAY0TI07pwX3aYwwk52HqqlJB358=' 'sha256-zb8ygSc2+G4sSd77nO/lyPNb/sawrcmNTL6Q1/fuKrM='; worker-src 'self' blob:; object-src 'self'"
   },
   "web_accessible_resources": [
     {
@@ -59,9 +55,7 @@
         "wasm/wllama.worker.js",
         "wasm/wllama.opfs.worker.js"
       ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
   "browser_specific_settings": {
@@ -69,9 +63,7 @@
       "id": "lumen-read@zolangui.dev",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
-        "required": [
-          "none"
-        ]
+        "required": ["none"]
       }
     }
   }

@@ -195,6 +195,10 @@ interface BookPaneProps {
 function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   const ref = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const citationHighlightTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null)
+  const citationHighlightCfiRef = useRef<string | null>(null)
   const typography = useTypography(tab)
   const { dark } = useColorScheme()
   const [background, , backgroundColor] = useBackground()
@@ -207,26 +211,407 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
   // v3.12: Semantic Jump Highlight Support
   useEffect(() => {
-    const handle = (e: any) => {
-      const { cfi, content } = e.detail
-      console.log("[Reader UI] highlight-chunk event received:", { cfi, content: content?.substring(0, 50) });
-      if (active && tab.rendition && cfi) {
+    const isHighlightableCfi = (cfi: string) =>
+      !!cfi &&
+      cfi.startsWith('epubcfi(') &&
+      cfi.includes('!') &&
+      /:\d+/.test(cfi)
+
+    const normalizeAnchorText = (value: string) =>
+      String(value || '')
+        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s\u00C0-\u024F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase()
+
+    const normalizeText = (value: string) =>
+      String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase()
+
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms))
+
+    const clearCitationHighlight = (cfi?: string) => {
+      const target = cfi || citationHighlightCfiRef.current
+      if (!target) return
+      try {
+        tab.rendition?.annotations.remove(target, 'highlight')
+      } catch {
+        // Ignore cleanup errors from stale/invalid CFI.
+      }
+      if (!cfi || target === citationHighlightCfiRef.current) {
+        citationHighlightCfiRef.current = null
+      }
+      if (citationHighlightTimerRef.current) {
+        clearTimeout(citationHighlightTimerRef.current)
+        citationHighlightTimerRef.current = null
+      }
+    }
+
+    const applyGlowCitationHighlight = (targetCfi: string): boolean => {
+      if (!tab.rendition || !isHighlightableCfi(targetCfi)) return false
+
+      // Remove previous citation highlight (or duplicated same-CFI highlight) to avoid stacking.
+      clearCitationHighlight(citationHighlightCfiRef.current || targetCfi)
+      try {
+        tab.rendition.annotations.remove(targetCfi, 'highlight')
+      } catch {
+        // Ignore if nothing exists yet.
+      }
+
+      try {
+        if (tab.rendition) {
+          const doc = tab.rendition.getContents()[0]?.document
+          if (doc) ensureHighlightStyles(doc)
+        }
+        tab.rendition.annotations.add(
+          'highlight',
+          targetCfi,
+          {},
+          undefined,
+          'glow-highlight',
+        )
+        citationHighlightCfiRef.current = targetCfi
+        citationHighlightTimerRef.current = setTimeout(() => {
+          clearCitationHighlight(targetCfi)
+        }, 5000)
+        return true
+      } catch (err) {
+        console.warn('[Reader] Failed to apply glow citation highlight:', err)
+        return false
+      }
+    }
+
+    const buildContentProbes = (content: string) => {
+      const normalized = normalizeText(content).replace(
+        /[^\p{L}\p{N}\s]/gu,
+        ' ',
+      )
+      const words = normalized.split(/\s+/).filter(Boolean)
+      if (words.length === 0) return [] as string[]
+
+      const starts = [22, 16, 12, 9, 7]
+      const mids = [14, 10]
+      const probes: string[] = []
+
+      for (const n of starts) {
+        if (words.length >= n) probes.push(words.slice(0, n).join(' '))
+      }
+
+      const midStart = Math.max(0, Math.floor(words.length / 2) - 8)
+      for (const n of mids) {
+        if (words.length >= midStart + n)
+          probes.push(words.slice(midStart, midStart + n).join(' '))
+      }
+
+      return Array.from(new Set(probes.filter((p) => p.length >= 32)))
+    }
+
+    const tryFindPreciseCfi = async (
+      content?: string,
+    ): Promise<string | null> => {
+      const text = String(content || '').trim()
+      if (!text) return null
+
+      const section = (tab as any)?.section
+      if (!section || typeof section.find !== 'function') return null
+
+      const probes = buildContentProbes(text)
+      if (probes.length === 0) return null
+
+      for (const probe of probes) {
         try {
-          // Apply Cyan Glow highlight to referenced text
-          tab.rendition.annotations.add('highlight', cfi, {}, undefined, 'glow-highlight')
-          setTimeout(() => {
-            try {
-              tab.rendition?.annotations.remove(cfi, 'highlight')
-            } catch { /* ignore removal errors */ }
-          }, 5000)
+          const matches = (section.find(probe) || []) as Array<{
+            cfi?: string
+            excerpt?: string
+          }>
+          const hit = matches.find(
+            (m) => typeof m?.cfi === 'string' && m.cfi.startsWith('epubcfi('),
+          )
+          if (hit?.cfi) return hit.cfi
+        } catch {
+          // Section may not be fully ready yet; caller retries.
+        }
+      }
+      return null
+    }
+
+    const buildNormalizedNodeMap = (doc: Document) => {
+      const refs: Array<{ node: Text; offset: number }> = []
+      const chars: string[] = []
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parentTag = (node.parentElement?.tagName || '').toLowerCase()
+          if (
+            parentTag === 'script' ||
+            parentTag === 'style' ||
+            parentTag === 'noscript'
+          ) {
+            return NodeFilter.FILTER_REJECT
+          }
+          return NodeFilter.FILTER_ACCEPT
+        },
+      })
+
+      let started = false
+      let prevSpace = false
+      const allowed = /[\w\u00C0-\u024F]/
+
+      let current = walker.nextNode()
+      while (current) {
+        const node = current as Text
+        const raw = node.nodeValue || ''
+
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw[i] || ''
+          const isSpace = /\s/.test(ch)
+          const out = isSpace ? ' ' : allowed.test(ch) ? ch.toLowerCase() : ' '
+          if (out === ' ') {
+            if (!started || prevSpace) continue
+            chars.push(' ')
+            refs.push({ node, offset: i })
+            prevSpace = true
+            continue
+          }
+          chars.push(out)
+          refs.push({ node, offset: i })
+          started = true
+          prevSpace = false
+        }
+
+        current = walker.nextNode()
+      }
+
+      if (chars.length > 0 && chars[chars.length - 1] === ' ') {
+        chars.pop()
+        refs.pop()
+      }
+
+      return { normalized: chars.join(''), refs }
+    }
+
+    const ensureHighlightStyles = (doc: Document) => {
+      if (doc.getElementById('lumen-highlight-styles')) return
+      const style = doc.createElement('style')
+      style.id = 'lumen-highlight-styles'
+      style.textContent = `
+        @keyframes lumen-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .glow-highlight, .lumen-citation-highlight {
+          background: linear-gradient(110deg, 
+            rgba(6, 182, 212, 0.1) 0%, 
+            rgba(6, 182, 212, 0.25) 50%, 
+            rgba(6, 182, 212, 0.1) 100%
+          ) !important;
+          background-size: 200% 100% !important;
+          animation: lumen-shimmer 3s linear infinite !important;
+          border-bottom: 2px solid rgba(6, 182, 212, 0.8) !important;
+          border-radius: 3px !important;
+          box-shadow: 0 2px 8px rgba(6, 182, 212, 0.15) !important;
+          transition: all 0.3s ease !important;
+        }
+      `
+      doc.head?.appendChild(style)
+    }
+
+    const clearFallbackHighlight = (doc: Document) => {
+      const nodes = doc.querySelectorAll('[data-lumen-citation-highlight="1"]')
+      nodes.forEach((node) => {
+        node.classList.remove('lumen-citation-highlight')
+        node.removeAttribute('data-lumen-citation-highlight')
+      })
+    }
+
+    const tryContentFallbackHighlight = (content?: string) => {
+      const text = normalizeText(content || '')
+      if (!text) return false
+
+      const wrapper = wrapperRef.current
+      if (!wrapper) return false
+
+      const frame = wrapper.querySelector('iframe') as HTMLIFrameElement | null
+      const doc = frame?.contentDocument
+      if (!doc?.body) return false
+
+      ensureHighlightStyles(doc)
+      clearFallbackHighlight(doc)
+
+      const probes = [220, 170, 130, 96, 72, 52]
+        .map((len) => text.slice(0, len))
+        .filter((probe) => probe.length >= 28)
+
+      if (probes.length === 0) return false
+
+      const candidates = Array.from(
+        doc.body.querySelectorAll(
+          'p, li, blockquote, h1, h2, h3, h4, h5, h6, div, span',
+        ),
+      )
+
+      let target: HTMLElement | null = null
+      for (const probe of probes) {
+        target = (candidates.find((el) =>
+          normalizeText(el.textContent || '').includes(probe),
+        ) || null) as HTMLElement | null
+        if (target) break
+      }
+
+      if (!target) return false
+
+      target.classList.add('lumen-citation-highlight')
+      target.setAttribute('data-lumen-citation-highlight', '1')
+      try {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      } catch {
+        // Ignore scroll failures in edge iframe states.
+      }
+
+      setTimeout(() => {
+        try {
+          target?.classList.remove('lumen-citation-highlight')
+          target?.removeAttribute('data-lumen-citation-highlight')
+        } catch {
+          // Ignore cleanup errors.
+        }
+      }, 5000)
+
+      return true
+    }
+
+    const tryAnchorBasedHighlight = async (
+      anchorStartNorm?: number,
+      anchorEndNorm?: number,
+      content?: string,
+    ): Promise<boolean> => {
+      if (!Number.isFinite(anchorStartNorm) || !Number.isFinite(anchorEndNorm))
+        return false
+      const startNorm = Number(anchorStartNorm)
+      const endNorm = Number(anchorEndNorm)
+      if (startNorm < 0 || endNorm <= startNorm) return false
+
+      const wrapper = wrapperRef.current
+      if (!wrapper) return false
+
+      const frame = wrapper.querySelector('iframe') as HTMLIFrameElement | null
+      const doc = frame?.contentDocument
+      if (!doc?.body) return false
+
+      const { normalized, refs } = buildNormalizedNodeMap(doc)
+      if (!normalized || refs.length === 0) return false
+
+      const start = Math.max(0, Math.min(startNorm, refs.length - 1))
+      const endExclusive = Math.max(start + 1, Math.min(endNorm, refs.length))
+
+      const contentNorm = normalizeAnchorText(content || '')
+      if (contentNorm.length >= 24) {
+        const probe = contentNorm.slice(0, Math.min(90, contentNorm.length))
+        const windowStart = Math.max(0, start - 80)
+        const windowEnd = Math.min(normalized.length, endExclusive + 80)
+        const nearby = normalized.slice(windowStart, windowEnd)
+        if (probe && !nearby.includes(probe)) {
+          return false
+        }
+      }
+
+      const startRef = refs[start]
+      const endRef = refs[endExclusive - 1]
+      if (!startRef || !endRef) return false
+
+      const range = doc.createRange()
+      range.setStart(startRef.node, startRef.offset)
+      range.setEnd(
+        endRef.node,
+        Math.min((endRef.node.nodeValue || '').length, endRef.offset + 1),
+      )
+
+      let cfi = ''
+      try {
+        cfi = tab.rangeToCfi(range)
+      } catch {
+        return false
+      }
+      if (!isHighlightableCfi(cfi)) return false
+
+      try {
+        tab.display(cfi, false)
+      } catch {
+        // Keep going; annotation may still succeed.
+      }
+      await sleep(60)
+
+      return applyGlowCitationHighlight(cfi)
+    }
+
+    const handle = (e: any) => {
+      const { cfi, content, anchorStartNorm, anchorEndNorm } = e.detail || {}
+      if (
+        active &&
+        tab.rendition &&
+        typeof cfi === 'string' &&
+        isHighlightableCfi(cfi)
+      ) {
+        try {
+          // Apply singleton glow highlight to avoid stacked overlays on repeated clicks.
+          applyGlowCitationHighlight(cfi)
         } catch (err) {
           console.warn('[Reader] Failed to highlight chunk CFI:', err)
         }
+        return
+      }
+
+      if (active && typeof content === 'string' && content.trim().length > 0) {
+        void (async () => {
+          let anchorAttempts = 0
+          const hasAnchors =
+            Number.isFinite(Number(anchorStartNorm)) &&
+            Number.isFinite(Number(anchorEndNorm)) &&
+            Number(anchorEndNorm) > Number(anchorStartNorm)
+
+          for (let attempt = 0; attempt < 14; attempt++) {
+            if (hasAnchors && anchorAttempts < 4) {
+              const anchored = await tryAnchorBasedHighlight(
+                Number(anchorStartNorm),
+                Number(anchorEndNorm),
+                content,
+              )
+              anchorAttempts++
+              if (anchored) return
+            }
+
+            const preciseCfi = await tryFindPreciseCfi(content)
+            if (preciseCfi && isHighlightableCfi(preciseCfi)) {
+              try {
+                tab.display(preciseCfi, false)
+              } catch {
+                // Keep going; highlight can still succeed even if display fails here.
+              }
+              await sleep(60)
+              try {
+                if (applyGlowCitationHighlight(preciseCfi)) return
+              } catch {
+                // If annotation fails, continue to fallback highlight.
+              }
+            }
+            if (tryContentFallbackHighlight(content)) return
+            await sleep(120)
+          }
+          console.warn(
+            '[Reader] Fallback highlight not found for citation content',
+          )
+        })()
       }
     }
     window.addEventListener('reader-highlight-chunk', handle)
-    return () => window.removeEventListener('reader-highlight-chunk', handle)
-  }, [active, tab.rendition])
+    return () => {
+      window.removeEventListener('reader-highlight-chunk', handle)
+      clearCitationHighlight()
+    }
+  }, [active, tab, tab.rendition])
 
   // Function to center content by applying dynamic padding to iframe body
   const centerContent = useCallback(() => {

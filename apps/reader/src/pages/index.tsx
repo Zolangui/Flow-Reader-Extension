@@ -8,8 +8,8 @@ import { useRouter } from 'next/router'
 import React, { useEffect, useState, useRef } from 'react'
 import { usePrevious } from 'react-use'
 
-import { ReaderGridView } from '../components'
 import { LibraryView } from '../components/LibraryView'
+import { ReaderGridView } from '../components/Reader'
 import { BookRecord, db } from '../db'
 import { addFile, fetchBook, handleFiles } from '../file'
 import {
