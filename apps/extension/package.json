@@ -1,7 +1,7 @@
 {
   "name": "@flow/extension",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Lumen Read ePub reader as a browser extension.",
   "scripts": {
     "build:chrome": "echo 'Building for Chrome...' && cp manifests/chrome_manifest_v3.json dist/manifest.json",

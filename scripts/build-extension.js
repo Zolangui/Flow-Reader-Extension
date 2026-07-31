@@ -51,7 +51,7 @@ async function build() {
     const skipSentry = process.env.SKIP_SENTRY !== 'false'
     const buildCommand = fastBuild
       ? 'pnpm turbo run build:export --filter=@flow/reader --output-logs=errors-only'
-      : 'pnpm build:reader:release'
+      : 'node scripts/build-reader-release.js'
 
     execSync(buildCommand, {
       stdio: 'inherit',

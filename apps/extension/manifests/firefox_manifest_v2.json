@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Lumen Read",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Redefine ePub reader",
   "icons": {
     "16": "icons/192.png",
