@@ -17,6 +17,18 @@
   },
   "permissions": ["storage", "identity"],
   "optional_permissions": ["trialML"],
+  "optional_host_permissions": [
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.anthropic.com/*",
+    "https://openrouter.ai/*",
+    "https://api.groq.com/*",
+    "https://api.together.xyz/*",
+    "https://api.mistral.ai/*",
+    "https://api.deepseek.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
   "host_permissions": [
     "*://*.dropboxapi.com/*",
     "https://huggingface.co/*",
@@ -60,7 +72,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "lumen-read@zolangui.dev",
-      "strict_min_version": "109.0",
+      "strict_min_version": "128.0",
       "data_collection_permissions": {
         "required": ["none"]
       }

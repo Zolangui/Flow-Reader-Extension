@@ -8,6 +8,18 @@
       "outputs": [".next/**", "out/**"],
       "env": ["FAST_BUILD", "SKIP_SENTRY", "NEXT_PUBLIC_IS_EXPORT", "ANALYZE"]
     },
+    "build:export:bundle": {
+      "outputs": [".next/**", "out/**"],
+      "env": [
+        "SKIP_SENTRY",
+        "NEXT_PUBLIC_IS_EXPORT",
+        "SKIP_BUILD_VALIDATION",
+        "ANALYZE"
+      ]
+    },
+    "typecheck": {
+      "outputs": []
+    },
     "lint": {
       "outputs": []
     },

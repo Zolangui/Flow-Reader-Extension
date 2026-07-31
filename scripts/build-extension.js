@@ -43,26 +43,26 @@ async function build() {
       )
     }
 
-    // 2. Run the static export (SKIP_SENTRY=true and FAST_BUILD=true for speed)
+    // 2. Build the static reader export. Release builds preserve production
+    // output while lint and type checks run in parallel with the bundle.
     console.log('Building the reader app for static export...')
 
-    // Default to fast build unless explicitly disabled
     const fastBuild = process.env.FAST_BUILD !== 'false'
     const skipSentry = process.env.SKIP_SENTRY !== 'false'
+    const buildCommand = fastBuild
+      ? 'pnpm turbo run build:export --filter=@flow/reader --output-logs=errors-only'
+      : 'pnpm build:reader:release'
 
-    execSync(
-      'pnpm turbo run build:export --filter=@flow/reader --output-logs=errors-only',
-      {
-        stdio: 'inherit',
-        cwd: rootDir,
-        env: {
-          ...process.env,
-          SKIP_SENTRY: skipSentry ? 'true' : 'false',
-          FAST_BUILD: fastBuild ? 'true' : 'false',
-          NEXT_PUBLIC_IS_EXPORT: 'true',
-        },
+    execSync(buildCommand, {
+      stdio: 'inherit',
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        SKIP_SENTRY: skipSentry ? 'true' : 'false',
+        FAST_BUILD: fastBuild ? 'true' : 'false',
+        NEXT_PUBLIC_IS_EXPORT: 'true',
       },
-    )
+    })
 
     // 3. Create the dist directory
     await fs.ensureDir(distDir)

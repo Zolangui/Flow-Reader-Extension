@@ -22,6 +22,9 @@ const withTM = require('next-transpile-modules')([
 
 const IS_DEV = process.env.NODE_ENV === 'development'
 const IS_DOCKER = process.env.DOCKER
+const shouldSkipBuildValidation =
+  process.env.FAST_BUILD === 'true' ||
+  process.env.SKIP_BUILD_VALIDATION === 'true'
 
 /**
  * @type {import('@sentry/nextjs').SentryWebpackPluginOptions}
@@ -46,10 +49,10 @@ let config = {
   compress: process.env.FAST_BUILD !== 'true', // Disable gzip for fast builds
   productionBrowserSourceMaps: false, // Disable for faster builds
   typescript: {
-    ignoreBuildErrors: process.env.FAST_BUILD === 'true', // Skip type-checking ONLY in fast build
+    ignoreBuildErrors: shouldSkipBuildValidation, // Release checks run in parallel
   },
   eslint: {
-    ignoreDuringBuilds: process.env.FAST_BUILD === 'true', // Skip linting ONLY in fast build
+    ignoreDuringBuilds: shouldSkipBuildValidation, // Release checks run in parallel
   },
   pageExtensions: ['ts', 'tsx'],
   webpack(config, { dev, isServer }) {
@@ -105,11 +108,11 @@ const docker = base
 const shouldEnableSentry = !process.env.SKIP_SENTRY
 const prod = shouldEnableSentry
   ? withSentryConfig(
-    base,
-    // Make sure adding Sentry options is the last code to run before exporting, to
-    // ensure that your source maps include changes from all other Webpack plugins
-    sentryWebpackPluginOptions,
-  )
+      base,
+      // Make sure adding Sentry options is the last code to run before exporting, to
+      // ensure that your source maps include changes from all other Webpack plugins
+      sentryWebpackPluginOptions,
+    )
   : base
 
 module.exports = IS_DEV ? dev : IS_DOCKER ? docker : prod
