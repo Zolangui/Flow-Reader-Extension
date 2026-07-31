@@ -42,7 +42,7 @@ const pending = new Map<number, (data: any) => void>()
 const SLM_CACHE_KEY = 'slm_cached_v1'
 const SLM_WARNING_KEY = 'slm_warning_v1'
 const SLM_BACKEND = 'wllama'
-const SLM_MODEL_ID = 'unsloth/gemma-3-270m-it-GGUF@gemma-3-270m-it-Q6_K.gguf'
+const SLM_MODEL_ID = 'unsloth/gemma-3-270m-it-GGUF@e45c5af:Q6_K'
 const SINGLE_THREAD_WARNING = 'single_thread'
 const loadCachedSync = () => {
   if (typeof window === 'undefined') return false

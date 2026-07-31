@@ -804,6 +804,24 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   useEffect(() => applyCustomStyle(), [applyCustomStyle])
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      tab.refreshPageCountEstimate()
+    }, 150)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    tab,
+    rendition,
+    typography.contentWidthPercent,
+    typography.fontFamily,
+    typography.fontSize,
+    typography.fontWeight,
+    typography.lineHeight,
+    typography.spread,
+    typography.zoom,
+  ])
+
+  useEffect(() => {
     if (dark === undefined) return
     // set `!important` when in dark mode
     const color = dark ? '#bfc8ca' : '#3f484a'
@@ -820,11 +838,12 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       try {
         // Call resize() without arguments to let epub.js recalculate
         rendition.resize()
+        window.setTimeout(() => tab.refreshPageCountEstimate(), 150)
       } catch (error) {
         console.error('Error resizing rendition after render:', error)
       }
     }
-  }, [rendition, rendered])
+  }, [rendition, rendered, tab])
 
   // Trigger resize when pane becomes visible after being hidden
   useEffect(() => {
@@ -835,6 +854,7 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
           // Double check rendition.manager is still valid
           try {
             rendition.resize()
+            window.setTimeout(() => tab.refreshPageCountEstimate(), 150)
           } catch (error) {
             console.error(
               'Error resizing rendition on visibility change:',
@@ -845,7 +865,7 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       }, 50)
       return () => clearTimeout(timeoutId)
     }
-  }, [active, rendition])
+  }, [active, rendition, tab])
 
   const [src, setSrc] = useState<string>()
 

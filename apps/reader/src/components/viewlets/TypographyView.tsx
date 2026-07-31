@@ -13,6 +13,16 @@ enum TypographyScope {
   Global,
 }
 
+const FONT_PRESETS = [
+  { value: '', label: 'default' },
+  { value: 'serif', label: 'serif' },
+  { value: 'sans-serif', label: 'sans-serif' },
+  { value: 'system-ui', label: 'system-ui' },
+  { value: 'monospace', label: 'monospace' },
+] as const
+
+const CUSTOM_FONT_VALUE = '__custom_font__'
+
 export const TypographyView: React.FC<PaneViewProps> = () => {
   const { focusedBookTab } = useReaderSnapshot()
   const [settings, setSettings] = useSettings()
@@ -20,7 +30,10 @@ export const TypographyView: React.FC<PaneViewProps> = () => {
   const t = useTranslation('typography')
   const [, setAction] = useAction()
 
-  const [localFonts, setLocalFonts] = useState<string[]>()
+  const [localFonts, setLocalFonts] = useState<string[]>([])
+  const [fontListStatus, setFontListStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'unsupported' | 'failed'
+  >('idle')
 
   const {
     fontFamily,
@@ -68,20 +81,35 @@ export const TypographyView: React.FC<PaneViewProps> = () => {
   )
 
   const queryLocalFonts = useCallback(async () => {
-    if (localFonts) return
-    if (!('queryLocalFonts' in window)) {
-      console.error('queryLocalFonts is not available')
+    if (fontListStatus === 'loading' || fontListStatus === 'ready') return
+
+    const fontWindow = window as Window & {
+      queryLocalFonts?: () => Promise<Array<{ family: string }>>
+    }
+    if (!fontWindow.queryLocalFonts) {
+      setFontListStatus('unsupported')
       return
     }
 
     try {
-      const fonts = await window.queryLocalFonts()
-      const uniqueFonts = Array.from(new Set(fonts.map((f) => f.family)))
+      setFontListStatus('loading')
+      const fonts = await fontWindow.queryLocalFonts()
+      const uniqueFonts = Array.from(
+        new Set(fonts.map((font) => font.family).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b))
       setLocalFonts(uniqueFonts)
+      setFontListStatus('ready')
     } catch (error) {
       console.error('Error querying local fonts:', error)
+      setFontListStatus('failed')
     }
-  }, [localFonts])
+  }, [fontListStatus])
+
+  const selectedFont =
+    FONT_PRESETS.some((font) => font.value === fontFamily) ||
+    localFonts.includes(fontFamily ?? '')
+      ? fontFamily || ''
+      : CUSTOM_FONT_VALUE
 
   return (
     <div className="h-full w-full overflow-hidden bg-white dark:bg-gray-900">
@@ -168,27 +196,89 @@ export const TypographyView: React.FC<PaneViewProps> = () => {
           <div>
             <label
               className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400"
-              htmlFor="font-family"
+              htmlFor="font-family-select"
             >
               {t('font_family')}
+            </label>
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+              {t('font_family_hint')}
+            </p>
+            <select
+              className="focus:ring-primary focus:border-primary w-full rounded-md border border-gray-300 bg-gray-100 py-2 px-3 text-sm text-gray-800 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              id="font-family-select"
+              value={selectedFont}
+              onChange={(event) => {
+                if (event.target.value !== CUSTOM_FONT_VALUE) {
+                  setTypography('fontFamily', event.target.value || undefined)
+                }
+              }}
+            >
+              {FONT_PRESETS.map((font) => (
+                <option key={font.value || 'default'} value={font.value}>
+                  {font.label === 'default' ? t('default') : font.label}
+                </option>
+              ))}
+              {localFonts.map((font) => (
+                <option key={font} value={font}>
+                  {font}
+                </option>
+              ))}
+              <option value={CUSTOM_FONT_VALUE}>
+                {t('font_family_custom')}
+              </option>
+            </select>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void queryLocalFonts()}
+                disabled={
+                  fontListStatus === 'loading' ||
+                  fontListStatus === 'ready' ||
+                  fontListStatus === 'unsupported'
+                }
+                className="text-primary rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-gray-100 disabled:cursor-default disabled:opacity-60 dark:border-gray-600 dark:hover:bg-gray-800"
+              >
+                {fontListStatus === 'loading'
+                  ? t('font_family_loading')
+                  : t('font_family_load_local')}
+              </button>
+              {fontListStatus === 'ready' && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('font_family_ready')}
+                </span>
+              )}
+            </div>
+            {(fontListStatus === 'unsupported' ||
+              fontListStatus === 'failed') && (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                {t(
+                  fontListStatus === 'unsupported'
+                    ? 'font_family_unsupported'
+                    : 'font_family_failed',
+                )}
+              </p>
+            )}
+            <label
+              className="mb-1 mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400"
+              htmlFor="font-family-custom"
+            >
+              {t('font_family_custom')}
             </label>
             <input
               type="text"
               list="local-fonts"
               className="focus:ring-primary focus:border-primary w-full rounded-md border border-gray-300 bg-gray-100 py-2 px-3 text-sm text-gray-800 focus:placeholder-transparent dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              id="font-family"
+              id="font-family-custom"
               value={fontFamily || ''}
-              placeholder={t('default')}
-              onFocus={queryLocalFonts}
-              onMouseEnter={queryLocalFonts}
-              onChange={(e) => setTypography('fontFamily', e.target.value)}
+              placeholder={t('font_family_custom_placeholder')}
+              onChange={(event) =>
+                setTypography('fontFamily', event.target.value || undefined)
+              }
             />
-            {localFonts && (
+            {localFonts.length > 0 && (
               <datalist id="local-fonts">
                 {localFonts.map((font) => (
-                  <option key={font} value={font}>
-                    {font}
-                  </option>
+                  <option key={font} value={font} />
                 ))}
               </datalist>
             )}

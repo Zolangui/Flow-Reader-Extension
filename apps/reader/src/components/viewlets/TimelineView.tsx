@@ -3,7 +3,7 @@ import React, { useMemo } from 'react'
 
 import {
   useAction,
-  useReadingTracker,
+  useReadingTrackerContext,
   useTranslation,
 } from '@flow/reader/hooks'
 import { useReaderSnapshot } from '@flow/reader/models'
@@ -13,13 +13,13 @@ import { PaneViewProps } from '../base'
 
 export const TimelineView: React.FC<PaneViewProps> = () => {
   const [, setAction] = useAction()
-  const { stats, todayTime } = useReadingTracker()
+  const { stats, todayTime } = useReadingTrackerContext()
   const { focusedBookTab } = useReaderSnapshot()
   const t = useTranslation()
 
   // Calculate current book progress
   const currentBook = focusedBookTab?.book
-  const totalPages = currentBook?.pageCount || 400 // Fallback to 400 if not calculated yet
+  const totalPages = currentBook?.pageCount ?? 0
   const isEstimated = currentBook?.pageCountEstimated ?? false
   const pagesRead = focusedBookTab?.book.percentage
     ? Math.round((focusedBookTab.book.percentage as number) * totalPages)
@@ -31,13 +31,16 @@ export const TimelineView: React.FC<PaneViewProps> = () => {
     (s) => s.bookId === currentBook?.id,
   )
   const totalMinutes = totalSessions.reduce((sum, s) => sum + s.duration, 0)
+  const trackedPagesRead = totalSessions.reduce(
+    (sum, session) => sum + session.pagesRead,
+    0,
+  )
   const avgSpeed =
-    totalMinutes > 0 ? Math.round((pagesRead / totalMinutes) * 60) : 0 // pages/hr
-
+    totalMinutes > 0 ? Math.round((trackedPagesRead / totalMinutes) * 60) : 0
   // Cap display at 200+ to avoid unrealistic numbers breaking layout
   const avgSpeedDisplay = avgSpeed > 200 ? '200+' : avgSpeed.toString()
 
-  const remainingPages = totalPages - pagesRead
+  const remainingPages = Math.max(0, totalPages - pagesRead)
   const estFinishMinutes =
     avgSpeed > 0 && avgSpeed <= 200
       ? Math.round((remainingPages / avgSpeed) * 60)
@@ -63,8 +66,11 @@ export const TimelineView: React.FC<PaneViewProps> = () => {
       }
     })
 
+    const todayKey = today.format('YYYY-MM-DD')
+    data[todayKey] = Math.max(data[todayKey] || 0, todayTime)
+
     return data
-  }, [stats.sessions])
+  }, [stats.sessions, todayTime])
 
   // Calculate grid and labels using verified utility
   const {
@@ -155,7 +161,7 @@ export const TimelineView: React.FC<PaneViewProps> = () => {
                     {t('timeline.pages_read')}
                   </p>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {pagesRead} / {totalPages}
+                    {totalPages ? `${pagesRead} / ${totalPages}` : '—'}
                     {isEstimated ? ' ~' : ''}
                   </p>
                 </div>

@@ -10,7 +10,8 @@ import { ChatOpenAI } from '@langchain/openai'
 
 import { sanitizeErrorForLogs } from '../security/redact'
 
-import { AISettings } from './config'
+import { type AIProvider, type AISettings } from './config'
+import { validateProviderBaseUrl } from './permissions'
 
 /**
  * Chat message format for conversation history
@@ -21,117 +22,49 @@ export interface ChatHistoryMessage {
 }
 
 /**
- * TOKEN BUCKET RATE LIMITER
- * Prevents "429 Too Many Requests" by tracking local usage.
- * Shared globally across all LLMService instances.
+ * Provider limits differ by account and model. Instead of inventing a global
+ * daily quota, only back off the provider that actually returned a quota error.
  */
-class RateGate {
-  private minuteWindow: number[] = []
-  private dayCount = 0
-  private dayKey = this.todayKey()
+const CIRCUIT_BACKOFF_MS = 60_000
+const circuitOpenUntilByProvider = new Map<AIProvider, number>()
 
-  constructor(private rpmLimit: number, private rpdLimit: number) {
-    // Load persisted daily usage if available
-    if (typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem('llm_daily_usage')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (parsed.key === this.dayKey) {
-            this.dayCount = parsed.count
-          }
-        } catch {}
-      }
-    }
-  }
-
-  private todayKey() {
-    const d = new Date()
-    return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`
-  }
-
-  private rotateDayIfNeeded() {
-    const k = this.todayKey()
-    if (k !== this.dayKey) {
-      this.dayKey = k
-      this.dayCount = 0
-      this.persist()
-    }
-  }
-
-  private persist() {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(
-        'llm_daily_usage',
-        JSON.stringify({ key: this.dayKey, count: this.dayCount }),
-      )
-    }
-  }
-
-  canSendNow() {
-    this.rotateDayIfNeeded()
-
-    const now = Date.now()
-    // Filter requests older than 1 minute
-    this.minuteWindow = this.minuteWindow.filter((t) => now - t < 60_000)
-
-    const rpmOk = this.minuteWindow.length < this.rpmLimit
-    const rpdOk = this.dayCount < this.rpdLimit
-
-    return {
-      ok: rpmOk && rpdOk,
-      reason: !rpmOk ? 'RPM' : !rpdOk ? 'RPD' : null,
-    }
-  }
-
-  markSent() {
-    this.rotateDayIfNeeded()
-    this.minuteWindow.push(Date.now())
-    this.dayCount++
-    this.persist()
-  }
+function isQuotaError(error: unknown): boolean {
+  const candidate: any = error
+  const message = String(candidate?.message || candidate || '').toLowerCase()
+  return (
+    candidate?.status === 429 ||
+    message.includes('429') ||
+    message.includes('quota') ||
+    message.includes('resource exhausted')
+  )
 }
 
-// Global Gate: 15 RPM, 1500 RPD (Conservative free tier defaults)
-// We use a singleton to enforce limits across the entire app.
-const GLOBAL_RATE_GATE = new RateGate(12, 1400) // Slightly below 15/1500 to be safe
-
-/**
- * CIRCUIT BREAKER
- * Opens when a 429 is received, blocking all requests for a backoff period.
- */
-let circuitOpenUntil = 0
-const CIRCUIT_BACKOFF_MS = 60_000 // 1 minute penalty
-
-async function guardedCall<T>(fn: () => Promise<T>): Promise<T> {
-  const now = Date.now()
-  if (now < circuitOpenUntil) {
-    const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
+function ensureProviderCircuit(provider: AIProvider): void {
+  const until = circuitOpenUntilByProvider.get(provider) || 0
+  if (Date.now() < until) {
+    const waitSec = Math.ceil((until - Date.now()) / 1000)
     throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
   }
-
-  const gateStatus = GLOBAL_RATE_GATE.canSendNow()
-  if (!gateStatus.ok) {
-    throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
-  }
-
-  try {
-    GLOBAL_RATE_GATE.markSent()
-    return await fn()
-  } catch (e: any) {
-    const msg = String(e?.message || e)
-    if (
-      msg.includes('429') ||
-      msg.toLowerCase().includes('quota') ||
-      msg.toLowerCase().includes('resource exhausted')
-    ) {
-      console.warn('429 Encountered. Opening Circuit Breaker.')
-      circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
-    }
-    throw e
-  }
 }
 
+function recordProviderFailure(provider: AIProvider, error: unknown): void {
+  if (!isQuotaError(error)) return
+  console.warn('Provider quota encountered. Opening provider circuit breaker.')
+  circuitOpenUntilByProvider.set(provider, Date.now() + CIRCUIT_BACKOFF_MS)
+}
+
+async function guardedCall<T>(
+  provider: AIProvider,
+  fn: () => Promise<T>,
+): Promise<T> {
+  ensureProviderCircuit(provider)
+  try {
+    return await fn()
+  } catch (error) {
+    recordProviderFailure(provider, error)
+    throw error
+  }
+}
 export class LLMService {
   private settings: AISettings
 
@@ -144,37 +77,22 @@ export class LLMService {
     const apiKey = this.settings.apiKey?.trim()
     const baseUrl = this.settings.baseUrl?.trim()
 
-    if ((provider === 'local' || provider === 'custom') && !baseUrl) {
-      throw new Error('Base URL is required for local/custom providers.')
+    if (provider === 'local' || provider === 'custom') {
+      const endpoint = validateProviderBaseUrl(provider, baseUrl)
+      if (endpoint.ok === false) throw new Error(`I18N_ERR:${endpoint.reason}`)
     }
 
     if (provider !== 'local' && !apiKey) {
-      throw new Error('API Key is missing')
+      throw new Error('I18N_ERR:api_key_missing')
+    }
+    if (!this.settings.model?.trim()) {
+      throw new Error('I18N_ERR:model_required')
     }
   }
 
   private getModel() {
     this.ensureProviderConfiguration()
-    let modelName = this.settings.model
-
-    if (this.settings.deepThink) {
-      if (
-        this.settings.provider === 'openai' &&
-        (!modelName || modelName.includes('gpt-4o'))
-      ) {
-        modelName = 'o1-preview'
-      } else if (
-        this.settings.provider === 'gemini' &&
-        (!modelName || modelName.includes('gemini-1.5'))
-      ) {
-        modelName = 'gemini-1.5-pro'
-      } else if (
-        this.settings.provider === 'anthropic' &&
-        (!modelName || modelName.includes('claude-3'))
-      ) {
-        modelName = 'claude-3-5-sonnet-latest'
-      }
-    }
+    const modelName = this.settings.model.trim()
 
     if (
       this.settings.provider === 'openai' ||
@@ -187,8 +105,7 @@ export class LLMService {
           this.settings.provider === 'local'
             ? this.settings.apiKey || 'not-needed'
             : this.settings.apiKey,
-        modelName:
-          modelName || (isOpenAIProvider ? 'gpt-4o-mini' : 'local-model'),
+        modelName,
         temperature: this.settings.temperature,
       }
 
@@ -206,18 +123,18 @@ export class LLMService {
     } else if (this.settings.provider === 'gemini') {
       return new ChatGoogleGenerativeAI({
         apiKey: this.settings.apiKey,
-        model: modelName || 'gemini-1.5-flash',
+        model: modelName,
         maxOutputTokens: 2048,
         temperature: this.settings.temperature,
       })
     } else if (this.settings.provider === 'anthropic') {
       return new ChatAnthropic({
         anthropicApiKey: this.settings.apiKey,
-        modelName: modelName || 'claude-3-5-haiku-latest',
+        modelName,
         temperature: this.settings.temperature,
       })
     }
-    throw new Error('Unsupported provider')
+    throw new Error('I18N_ERR:unsupported_provider')
   }
 
   async generateResponse(
@@ -226,7 +143,7 @@ export class LLMService {
     history: ChatHistoryMessage[] = [],
   ): Promise<string> {
     if (!this.settings.apiKey && this.settings.provider !== 'local') {
-      throw new Error('API Key is missing')
+      throw new Error('I18N_ERR:api_key_missing')
     }
 
     let effectivePrompt = systemPrompt
@@ -239,7 +156,7 @@ export class LLMService {
 ${effectivePrompt}`
     }
 
-    return guardedCall(async () => {
+    return guardedCall(this.settings.provider, async () => {
       try {
         const model = this.getModel()
         const response = await model.invoke([
@@ -277,7 +194,7 @@ ${effectivePrompt}`
     history?: ChatHistoryMessage[],
   ): AsyncGenerator<string, void, unknown> {
     if (!this.settings.apiKey && this.settings.provider !== 'local') {
-      throw new Error('API Key is missing')
+      throw new Error('I18N_ERR:api_key_missing')
     }
 
     let effectivePrompt = systemPrompt
@@ -292,19 +209,9 @@ ${effectivePrompt}`
 
     const model = this.getModel()
 
-    // We can't easily wrap a generator in guardedCall, so we manually check
-    const now = Date.now()
-    if (now < circuitOpenUntil) {
-      const waitSec = Math.ceil((circuitOpenUntil - now) / 1000)
-      throw new Error(`I18N_ERR:circuit_breaker:${waitSec}`)
-    }
-    const gateStatus = GLOBAL_RATE_GATE.canSendNow()
-    if (!gateStatus.ok)
-      throw new Error(`I18N_ERR:rate_limit:${gateStatus.reason}`)
+    ensureProviderCircuit(this.settings.provider)
 
     try {
-      GLOBAL_RATE_GATE.markSent()
-
       // Build messages array with optional history
       const messages: BaseMessage[] = [new SystemMessage(effectivePrompt)]
 
@@ -341,8 +248,7 @@ ${effectivePrompt}`
         errMsg.includes('resource exhausted') ||
         errMsg.includes('quota')
       ) {
-        console.warn('429 Encountered in Stream. Opening Circuit Breaker.')
-        circuitOpenUntil = Date.now() + CIRCUIT_BACKOFF_MS
+        recordProviderFailure(this.settings.provider, error)
         message = `I18N_ERR:circuit_breaker:${CIRCUIT_BACKOFF_MS / 1000}`
       }
 
@@ -366,7 +272,7 @@ ${effectivePrompt}`
         
         Return ONLY the name of the persona.`
 
-    return guardedCall(async () => {
+    return guardedCall(this.settings.provider, async () => {
       try {
         const model = this.getModel()
         const response = await model.invoke([

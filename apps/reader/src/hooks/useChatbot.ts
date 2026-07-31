@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react'
 
 import { db, type ChatMessageRecord, type ChatSessionRecord } from '../db'
+import {
+  LOCAL_MODEL_CONSENT_VERSION,
+  isCloudAIProvider,
+} from '../lib/ai/config'
 import { detectQueryLanguage, normalizeLangForRAG } from '../lib/ai/language'
 import { LLMService } from '../lib/ai/llm'
+import { hasProviderHostPermission } from '../lib/ai/permissions'
 import { RAGService } from '../lib/ai/rag'
 import {
   getRetrievalParamsForReading,
@@ -126,13 +131,48 @@ export function useChatbot() {
     })
   }
 
+  const persistActiveMessages = (messages: ChatMessageRecord[]) => {
+    const bookTab = reader.focusedBookTab
+    const book = bookTab?.book
+    if (!bookTab || !book) return
+
+    const sessions = Array.isArray(book.chatSessions)
+      ? [...book.chatSessions]
+      : []
+    let activeChatId = book.activeChatId
+    if (!activeChatId && sessions.length > 0) activeChatId = sessions[0].id
+
+    if (!activeChatId) {
+      const session = createChatSession([])
+      sessions.push(session)
+      activeChatId = session.id
+    }
+
+    const index = sessions.findIndex((session) => session.id === activeChatId)
+    const previous = index >= 0 ? sessions[index] : createChatSession([])
+    const updated: ChatSessionRecord = {
+      ...previous,
+      id: activeChatId,
+      messages,
+      updatedAt: Date.now(),
+      title: deriveChatTitle(messages, previous.title),
+    }
+
+    if (index >= 0) sessions[index] = updated
+    else sessions.push(updated)
+    persistSessions(sessions, activeChatId, messages)
+  }
+
   const stopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
     inFlightRef.current = false
-    setState((prev) => ({ ...prev, isLoading: false }))
+    setState((prev) => {
+      persistActiveMessages(prev.messages)
+      return { ...prev, isLoading: false }
+    })
   }
 
   // Restoration Effect
@@ -201,7 +241,21 @@ export function useChatbot() {
 
     try {
       const book = reader.focusedBookTab?.book
-      if (!book) throw new Error('No active book')
+      if (!book) throw new Error('I18N_ERR:no_active_book')
+
+      const isCloudProvider = isCloudAIProvider(settings.provider)
+      if (
+        isCloudProvider &&
+        (!settings.remoteDataConsent ||
+          settings.remoteDataConsentProvider !== settings.provider)
+      ) {
+        throw new Error('I18N_ERR:remote_consent_required')
+      }
+      if (
+        !(await hasProviderHostPermission(settings.provider, settings.baseUrl))
+      ) {
+        throw new Error('I18N_ERR:host_permission_required')
+      }
 
       const isSelectionAction = !!options.action
       const fallbackLang = normalizeLangForRAG(
@@ -239,7 +293,23 @@ export function useChatbot() {
         : (stateRef.current.meta?.lastIntent as ReadingIntent | undefined) ||
           'general'
 
-      if (!options.deeper && !isSelectionAction) {
+      if (
+        !options.deeper &&
+        !isSelectionAction &&
+        !(
+          settings.downloadLocalModels &&
+          settings.localModelConsentVersion === LOCAL_MODEL_CONSENT_VERSION
+        )
+      ) {
+        classifiedIntents = [{ type: 'general', query: baseQuery }]
+      }
+
+      if (
+        !options.deeper &&
+        !isSelectionAction &&
+        settings.downloadLocalModels &&
+        settings.localModelConsentVersion === LOCAL_MODEL_CONSENT_VERSION
+      ) {
         const classification = await classifyQueryForRetrieval(
           baseQuery,
           stateRef.current.messages,
@@ -296,10 +366,14 @@ export function useChatbot() {
       const weightedLists: Array<{ items: any[]; weight: number }> = []
 
       // v3.11: Gather User Context
-      const annotations = book.annotations
-        .map((a) => a.notes)
-        .filter(Boolean) as string[]
-      const definitions = book.definitions || []
+      const annotations =
+        !isCloudProvider || settings.includeAnnotationsInRemotePrompts
+          ? (book.annotations.map((a) => a.notes).filter(Boolean) as string[])
+          : []
+      const definitions =
+        !isCloudProvider || settings.includeDefinitionsInRemotePrompts
+          ? book.definitions || []
+          : []
 
       for (let qi = 0; qi < queries.length; qi++) {
         const q = queries[qi]
@@ -350,19 +424,19 @@ export function useChatbot() {
       // ===== Deterministic fallback: book_only + no context => pula LLM =====
       if (!hadContext && scope === 'book_only') {
         const msg = canSearchDeeper
-          ? t('ai.no_context.can_search_deeper') ||
+          ? t('no_context.can_search_deeper') ||
             "I couldn't find a direct answer in the current excerpts. Would you like me to search deeper in other chapters?"
-          : t('ai.no_context.final') ||
+          : t('no_context.final') ||
             "I couldn't find a direct answer in the book for this question."
 
-        setState((prev) => ({
-          ...prev,
-          messages: [
+        setState((prev) => {
+          const nextMessages: ChatMessageRecord[] = [
             ...prev.messages,
             { role: 'assistant', content: msg, id: Date.now().toString() },
-          ],
-          isLoading: false,
-        }))
+          ]
+          persistActiveMessages(nextMessages)
+          return { ...prev, messages: nextMessages, isLoading: false }
+        })
         abortControllerRef.current = null
         return
       }
@@ -418,9 +492,10 @@ export function useChatbot() {
       const needsBaseUrl =
         settings.provider === 'local' || settings.provider === 'custom'
       if (needsBaseUrl && !settings.baseUrl?.trim())
-        throw new Error(`Base URL required for ${settings.provider}.`)
+        throw new Error('I18N_ERR:base_url_required')
+
       if (needsKey && !settings.apiKey?.trim())
-        throw new Error(`API Key required for ${settings.provider}.`)
+        throw new Error('I18N_ERR:api_key_missing')
 
       // ✅ history sem stale (usa stateRef)
       const history = stateRef.current.messages.map((m) => ({
@@ -451,11 +526,14 @@ export function useChatbot() {
         )
       }
 
+      if (controller.signal.aborted) return
+
       // finalize + scrub final
       let final = normalizeCitationsToFooter(fullResponse)
 
       // SOTA: Citation audit + one-shot repair retry (NotebookLM-like grounding discipline)
       if (
+        settings.autoRepairCitations &&
         !isSelectionAction &&
         scope === 'book_only' &&
         dedupedContext.length > 0
@@ -577,7 +655,7 @@ Return only the corrected final answer.`
     } catch (e: any) {
       if (e.name === 'AbortError') return
 
-      let message = `Error: ${e.message}`
+      let message = t('error.generation_failed')
 
       // Handle I18N Errors from LLMService
       if (typeof e.message === 'string' && e.message.startsWith('I18N_ERR:')) {
@@ -596,14 +674,14 @@ Return only the corrected final answer.`
           '🚨 **Index Compatibility Issue:** The AI model or embedding settings have changed. To ensure accurate context retrieval, please go to **Settings > General** and click **Re-index Book**.'
       }
 
-      setState((prev) => ({
-        ...prev,
-        messages: [
+      setState((prev) => {
+        const nextMessages: ChatMessageRecord[] = [
           ...prev.messages,
           { role: 'assistant', content: message, id: Date.now().toString() },
-        ],
-        isLoading: false,
-      }))
+        ]
+        persistActiveMessages(nextMessages)
+        return { ...prev, messages: nextMessages, isLoading: false }
+      })
     } finally {
       inFlightRef.current = false
       abortControllerRef.current = null

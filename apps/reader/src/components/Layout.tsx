@@ -14,6 +14,7 @@ import {
   MdSelfImprovement,
   MdLibraryBooks,
   MdSmartToy,
+  MdClose,
 } from 'react-icons/md'
 import { useRecoilState } from 'recoil'
 
@@ -23,6 +24,7 @@ import {
   useBackground,
   useColorScheme,
   useMobile,
+  ReadingTrackerProvider,
   useSetAction,
   useTranslation,
   useZenModeHandler,
@@ -59,11 +61,17 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({
   children,
 }) => {
   useColorScheme()
-  useZenModeHandler()
+  const { toggleZenMode } = useZenModeHandler()
   const [isZenMode] = useZenMode()
   const [ready, setReady] = useState(false)
+  const [showZenHint, setShowZenHint] = useState(false)
   const setAction = useSetAction()
   const mobile = useMobile()
+  const t = useTranslation()
+
+  useEffect(() => {
+    if (isZenMode) setShowZenHint(true)
+  }, [isZenMode])
 
   useEffect(() => {
     if (mobile === undefined) return
@@ -72,14 +80,39 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({
   }, [mobile, setAction])
 
   return (
-    <div id="layout" className="select-none">
-      <SplitView>
-        {!isZenMode && mobile === false && <ActivityBar />}
-        {!isZenMode && mobile === true && <NavigationBar />}
-        {!isZenMode && ready && <SideBar />}
-        {ready && <Reader>{children}</Reader>}
-      </SplitView>
-    </div>
+    <ReadingTrackerProvider>
+      <div id="layout" className="select-none">
+        <SplitView>
+          {!isZenMode && mobile === false && <ActivityBar />}
+          {!isZenMode && mobile === true && <NavigationBar />}
+          {!isZenMode && ready && <SideBar />}
+          {ready && <Reader>{children}</Reader>}
+        </SplitView>
+        {isZenMode && showZenHint && (
+          <div className="fixed inset-x-0 top-3 z-50 flex justify-center px-4">
+            <div className="flex items-center gap-3 rounded-full bg-black/70 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur">
+              <span>{t('zen.exit_hint')}</span>
+              <button
+                type="button"
+                onClick={() => void toggleZenMode()}
+                className="bg-white/15 rounded-full px-2.5 py-1 font-semibold transition-colors hover:bg-white/25"
+              >
+                {t('zen.exit_action')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowZenHint(false)}
+                aria-label={t('zen.dismiss_hint')}
+                title={t('zen.dismiss_hint')}
+                className="hover:bg-white/15 rounded-full p-1 text-white/75 transition-colors hover:text-white"
+              >
+                <MdClose className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </ReadingTrackerProvider>
   )
 }
 
@@ -153,7 +186,7 @@ const viewActions: IViewAction[] = [
   },
   {
     name: 'chatbot',
-    title: 'chatbot',
+    title: 'ai',
     Icon: MdSmartToy,
     View: ChatbotSidebar,
     env: Env.Desktop | Env.Mobile,
@@ -182,7 +215,7 @@ function ViewActionBar({ className, env }: EnvActionBarProps) {
   const [action, setAction] = useAction()
   const t = useTranslation()
   const [isZenMode] = useZenMode()
-  const { toggleZenMode } = useZenModeHandler()
+  const { toggleZenMode } = useZenModeHandler({ listen: false })
 
   return (
     <ActionBar className={className}>

@@ -26,6 +26,18 @@ export default {
   'typography.page_view.single_page': 'Einzelseite',
   'typography.page_view.double_page': 'Doppelseite',
   'typography.font_family': 'Schriftart',
+  'typography.font_family_hint':
+    'Wähle eine Standardschrift aus oder lade die auf diesem Gerät installierten Schriftarten.',
+  'typography.font_family_load_local': 'Geräteschriften laden',
+  'typography.font_family_loading': 'Schriften werden geladen...',
+  'typography.font_family_ready': 'Geräteschriften geladen',
+  'typography.font_family_unsupported':
+    'Dieser Browser kann die Geräteschriften nicht auflisten. Du kannst den Namen einer Schriftart trotzdem eingeben.',
+  'typography.font_family_failed':
+    'Die Geräteschriften konnten nicht geladen werden. Du kannst den Namen einer Schriftart trotzdem eingeben.',
+  'typography.font_family_custom': 'Benutzerdefinierte Schriftfamilie',
+  'typography.font_family_custom_placeholder':
+    'Namen einer installierten Schriftart eingeben',
   'typography.font_size': 'Schriftgröße',
   'typography.font_weight': 'Schriftstärke',
   'typography.line_height': 'Zeilenhöhe',
@@ -36,6 +48,9 @@ export default {
   'theme.title': 'Thema',
   'audio.title': 'Ambiente',
   'zen.title': 'Zen-Modus',
+  'zen.exit_hint': 'Der Zen-Modus ist aktiv. Drücke Esc zum Beenden.',
+  'zen.exit_action': 'Zen-Modus beenden',
+  'zen.dismiss_hint': 'Hinweis schließen',
   'theme.source_color': 'Quellfarbe',
   'theme.background_color': 'Hintergrundfarbe',
   'settings.title': 'Einstellungen',
@@ -197,6 +212,7 @@ export default {
   'ai.reindex_success': 'Buch erfolgreich neu indexiert.',
   'ai.reindex_error': 'Buch konnte nicht neu indexiert werden.',
   'ai.index.no_book': 'Kein aktives Buch zum Indexieren.',
+  'ai.index.file_missing': 'Die Datei dieses Buches ist lokal nicht verfügbar.',
   'ai.index.success':
     'Buch erfolgreich indexiert! Die KI kann jetzt Fragen zum Inhalt beantworten.',
   'ai.index.failed': 'Indexierung fehlgeschlagen: {error}',
@@ -221,15 +237,15 @@ export default {
   'ai.settings.model_category.fast': 'Schnell / Effizient',
   'ai.settings.model_category.other': 'Andere',
   'ai.settings.model_hint.gemini':
-    'Am besten für Geschwindigkeit: gemini-1.5-flash. Am besten für Qualität: gemini-1.5-pro.',
+    'Wähle ein aktuell für dein Konto verfügbares Gemini-Modell. Aktualisiere die Liste nach dem Einfügen des API-Schlüssels.',
   'ai.settings.model_hint.openai':
-    'Am besten für Geschwindigkeit: gpt-4o-mini. Am besten für Qualität: gpt-4o.',
+    'Wähle ein aktuell für dein Konto verfügbares OpenAI-Modell. Aktualisiere die Liste nach dem Einfügen des API-Schlüssels.',
   'ai.settings.model_hint.anthropic':
-    'Sehr empfohlen: claude-3-5-sonnet-latest.',
+    'Wähle ein aktuell für dein Konto verfügbares Anthropic-Modell. Aktualisiere die Liste nach dem Einfügen des API-Schlüssels.',
   'ai.settings.model_hint.local':
-    'Verbinde dich mit lokalen Inferenzservern wie Ollama oder LM Studio. Keine Daten verlassen dein Gerät.',
+    'Gib die Modell-ID deines lokalen Servers ein oder aktualisiere die Liste, wenn der Server dies unterstützt.',
   'ai.settings.model_hint.custom':
-    'Verbinde dich mit jedem OpenAI-kompatiblen API-Proxy oder spezialisierten Endpoint (z.B. OpenRouter, Anyscale).',
+    'Gib eine von diesem Endpoint unterstützte Modell-ID ein. Die Liste kann bei kompatiblen Servern aktualisiert werden.',
   'ai.settings.claude_series': 'Claude-Serie',
   'ai.settings.api_key_placeholder': 'Schlüssel hier einfügen...',
   'ai.settings.proxy_api_key': 'Proxy-API-Schlüssel (optional)',
@@ -290,6 +306,8 @@ export default {
     'Rate-Limit ueberschritten ({reason}). Bitte langsamer.',
   'ai.error.unsupported_provider': 'Nicht unterstuetzter Anbieter.',
   'ai.error.api_key_missing': 'API-Schluessel ist nicht konfiguriert.',
+  'ai.error.model_required':
+    'Wahle vor dem Senden einer Anfrage ein Modell aus.',
   'ai.error.generation_failed':
     'Antwort konnte nicht vom KI-Anbieter erzeugt werden.',
   'ai.selection.explain': 'Erklaeren',
@@ -313,4 +331,35 @@ export default {
     'Vorabladen: Zeitueberschreitung (erneut versuchen)',
   'ai.status.click_to_download': 'Klicken zum Herunterladen',
   'ai.status.not_indexed': 'Nicht indiziert',
+  'ai.settings.api_key_session_only':
+    'Dein API-Schlussel wird nur fur diese Browser-Sitzung gespeichert und beim Beenden geloscht.',
+  'ai.settings.connection_permission_desc':
+    'Erlaube dem Browser den Zugriff auf den ausgewahlten KI-Anbieter oder lokalen Server. Dies testet weder deinen API-Schlussel noch stellt es eine Verbindung her.',
+  'ai.settings.allow_connection': 'Anbieterzugriff erlauben',
+  'ai.settings.connection_allowed': 'Anbieterzugriff erlaubt',
+  'ai.settings.local_models_download_required':
+    'Aktiviere oben "Modelle herunterladen", um SLM-Downloads zu aktivieren.',
+  'ai.settings.remote_data_consent': 'Buchdaten an diesen Anbieter senden',
+  'ai.settings.remote_data_consent_desc':
+    'Erlaubt, die Frage, den letzten Chat und ausgewahlte Buchauszuge an den gewahlten Anbieter zu senden.',
+  'ai.settings.share_annotations': 'Auch meine Notizen senden',
+  'ai.settings.share_definitions':
+    'Auch meine gespeicherten Definitionen senden',
+  'ai.settings.auto_repair_citations':
+    'Reparatur von Zitaten automatisch erneut versuchen',
+  'ai.error.base_url_required': 'Gib zuerst eine Server-URL ein.',
+  'ai.error.invalid_base_url':
+    'Verwende HTTPS fur einen unterstutzten Anbieter oder eine localhost-URL fur lokale KI.',
+  'ai.error.unsupported_custom_host':
+    'Dieser benutzerdefinierte Anbieter steht nicht auf der Liste unterstutzter sicherer Hosts.',
+  'ai.error.host_permission_required':
+    'Erlaube die Verbindung zum Anbieter in den KI-Einstellungen, bevor du eine Anfrage sendest.',
+  'ai.error.host_permission_denied':
+    'Die Verbindungserlaubnis wurde nicht erteilt.',
+  'ai.error.remote_consent_required':
+    'Bestatige die Remote-Datenfreigabe fur diesen Anbieter, bevor du eine Anfrage sendest.',
+  'ai.error.no_active_book':
+    'Offne ein Buch, bevor du den Leseassistenten verwendest.',
+  'ai.error.index_incompatible':
+    'Die Einstellungen des KI-Index haben sich geandert. Indiziere dieses Buch neu, bevor du eine weitere Frage stellst.',
 } as const

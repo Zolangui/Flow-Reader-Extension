@@ -24,11 +24,20 @@ import {
 import { db } from '../db'
 import { useTranslation } from '../hooks/useTranslation'
 import {
+  LOCAL_MODEL_CONSENT_VERSION,
+  isCloudAIProvider,
+} from '../lib/ai/config'
+import {
   getFastTextStatus,
   getFastTextWarning,
   normalizeLangForRAG,
   preloadFastText,
 } from '../lib/ai/language'
+import {
+  hasProviderHostPermission,
+  requestProviderHostPermission,
+  validateProviderBaseUrl,
+} from '../lib/ai/permissions'
 import { RAGService } from '../lib/ai/rag'
 import { getSlmStatus, getSlmWarning, preloadSlm } from '../lib/ai/rewriter'
 import { sanitizeErrorForLogs } from '../lib/security/redact'
@@ -37,7 +46,6 @@ import {
   defaultAIConfig,
   type AIProvider,
   useAISettings,
-  useChatbotState,
   useSettings,
 } from '../state'
 
@@ -152,14 +160,19 @@ interface ModelCacheEntry {
 const MODEL_FETCH_CACHE_TTL_MS = 10 * 60 * 1000
 const MODEL_FETCH_CACHE = new Map<string, ModelCacheEntry>()
 
-function buildModelCacheKey(provider: AIProvider, apiKey: string): string {
+function buildModelCacheKey(
+  provider: AIProvider,
+  apiKey: string,
+  baseUrl?: string,
+): string {
   const trimmed = apiKey.trim()
-  if (!trimmed) return provider
+  const endpoint = baseUrl?.trim() || ''
+  if (!trimmed) return `${provider}:${endpoint}`
   const keyFingerprint = `${trimmed.length}:${trimmed.slice(
     0,
     4,
   )}:${trimmed.slice(-2)}`
-  return `${provider}:${keyFingerprint}`
+  return `${provider}:${endpoint}:${keyFingerprint}`
 }
 
 interface PremiumSelectProps {
@@ -481,42 +494,93 @@ export const AISettingsPanel: React.FC<{
   className?: string
   onClose: () => void
   isSetup?: boolean
-}> = ({ className, onClose, isSetup }) => {
-  const getDefaultModelForProvider = React.useCallback(
-    (provider: AIProvider) => {
-      if (provider === 'openai') return 'gpt-4o-mini'
-      if (provider === 'anthropic') return 'claude-3-5-haiku-latest'
-      if (provider === 'gemini') return 'gemini-1.5-flash'
-      if (provider === 'local') return 'local-model'
-      return 'gpt-4o-mini'
-    },
-    [],
-  )
-
-  const isModelCompatibleWithProvider = React.useCallback(
-    (provider: AIProvider, model: string) => {
-      const normalized = (model || '').trim().toLowerCase()
-      if (!normalized) return false
-      if (provider === 'openai')
-        return (
-          normalized.startsWith('gpt') ||
-          normalized.startsWith('o1') ||
-          normalized.startsWith('o3')
-        )
-      if (provider === 'gemini') return normalized.startsWith('gemini')
-      if (provider === 'anthropic') return normalized.startsWith('claude')
-      if (provider === 'local')
-        return !/^(gpt|o1|o3|gemini|claude)/i.test(normalized)
-      return true
-    },
-    [],
-  )
-
+  onClearHistory: () => void | Promise<void>
+}> = ({ className, onClose, isSetup, onClearHistory }) => {
   const [settings, setSettings] = useAISettings()
   const [appSettings] = useSettings()
-  const [, setChatState] = useChatbotState()
   const [activeTab, setActiveTab] = useState<Tab>('General')
   const t = useTranslation('ai')
+  const isCloudProvider = isCloudAIProvider(settings.provider)
+  const [connectionPermissionStatus, setConnectionPermissionStatus] = useState<
+    'checking' | 'idle' | 'granted' | 'denied'
+  >('checking')
+
+  React.useEffect(() => {
+    let isCurrent = true
+    setConnectionPermissionStatus('checking')
+    void hasProviderHostPermission(settings.provider, settings.baseUrl).then(
+      (granted) => {
+        if (isCurrent) {
+          setConnectionPermissionStatus(granted ? 'granted' : 'idle')
+        }
+      },
+      () => {
+        if (isCurrent) setConnectionPermissionStatus('idle')
+      },
+    )
+    return () => {
+      isCurrent = false
+    }
+  }, [settings.provider, settings.baseUrl])
+
+  const connectionConfigurationError = React.useMemo(() => {
+    if (settings.provider === 'local' || settings.provider === 'custom') {
+      const endpoint = validateProviderBaseUrl(
+        settings.provider,
+        settings.baseUrl,
+      )
+      if (endpoint.ok === false) return endpoint.reason
+    }
+
+    if (settings.provider !== 'local' && !settings.apiKey.trim()) {
+      return 'api_key_missing' as const
+    }
+
+    return null
+  }, [settings.apiKey, settings.baseUrl, settings.provider])
+
+  const isConnectionPermissionReady = connectionConfigurationError === null
+
+  const updateLocalModelConsent = (checked: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      downloadLocalModels: checked,
+      localModelConsentVersion: checked ? LOCAL_MODEL_CONSENT_VERSION : 0,
+    }))
+  }
+
+  const updateRemoteDataConsent = (checked: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      remoteDataConsent: checked,
+      remoteDataConsentProvider: checked ? prev.provider : '',
+      includeAnnotationsInRemotePrompts: checked
+        ? prev.includeAnnotationsInRemotePrompts
+        : false,
+      includeDefinitionsInRemotePrompts: checked
+        ? prev.includeDefinitionsInRemotePrompts
+        : false,
+      autoRepairCitations: checked ? prev.autoRepairCitations : false,
+    }))
+  }
+
+  const requestConnectionPermission = async () => {
+    if (connectionConfigurationError) {
+      setConnectionPermissionStatus('idle')
+      alert(t(`error.${connectionConfigurationError}`))
+      return
+    }
+
+    // permissions.request is invoked in this click handler so the browser can
+    // show an informed, host-specific permission prompt.
+    setConnectionPermissionStatus('checking')
+    const granted = await requestProviderHostPermission(
+      settings.provider,
+      settings.baseUrl,
+    )
+    setConnectionPermissionStatus(granted ? 'granted' : 'denied')
+    if (!granted) alert(t('error.host_permission_denied'))
+  }
 
   const [loadingModels, setLoadingModels] = useState(false)
   const [availableModels, setAvailableModels] = useState<SelectGroup[]>([])
@@ -728,6 +792,13 @@ export const AISettingsPanel: React.FC<{
     setSettings((prev) => {
       const providerChanged = prev.provider !== nextProvider
       const next = { ...prev, provider: nextProvider }
+      if (providerChanged) {
+        next.remoteDataConsent = false
+        next.remoteDataConsentProvider = ''
+        next.includeAnnotationsInRemotePrompts = false
+        next.includeDefinitionsInRemotePrompts = false
+        next.autoRepairCitations = false
+      }
 
       // Prevent stale local/custom endpoint from leaking into hosted providers.
       if (
@@ -739,10 +810,10 @@ export const AISettingsPanel: React.FC<{
       }
 
       if (providerChanged) {
-        const currentModel = prev.model || ''
-        if (!isModelCompatibleWithProvider(nextProvider, currentModel)) {
-          next.model = getDefaultModelForProvider(nextProvider)
-        }
+        // Model availability changes independently for every provider.
+        // Ask the user to select a currently available model instead of
+        // carrying forward a versioned default from a previous provider.
+        next.model = ''
       }
 
       return next
@@ -756,7 +827,7 @@ export const AISettingsPanel: React.FC<{
         ...defaultAIConfig,
         apiKey: prev.apiKey,
         provider: prev.provider,
-        model: getDefaultModelForProvider(prev.provider),
+        model: '',
         baseUrl:
           prev.provider === 'local' || prev.provider === 'custom'
             ? prev.baseUrl
@@ -766,9 +837,9 @@ export const AISettingsPanel: React.FC<{
   }
 
   const clearHistory = () => {
-    if (confirm(t('confirm_clear'))) {
-      setChatState((prev) => ({ ...prev, messages: [] }))
-    }
+    if (!confirm(t('confirm_clear'))) return
+
+    void onClearHistory()
   }
 
   const runReindexBook = async (bookId: string) => {
@@ -839,9 +910,20 @@ export const AISettingsPanel: React.FC<{
   const fetchModels = React.useCallback(
     async (options?: { force?: boolean }) => {
       const force = options?.force === true
-      if (!settings.apiKey) return alert(t('settings.enter_api_key_first'))
+      if (settings.provider !== 'local' && !settings.apiKey) {
+        return alert(t('settings.enter_api_key_first'))
+      }
+      if (
+        !(await hasProviderHostPermission(settings.provider, settings.baseUrl))
+      ) {
+        return alert(t('error.host_permission_required'))
+      }
 
-      const cacheKey = buildModelCacheKey(settings.provider, settings.apiKey)
+      const cacheKey = buildModelCacheKey(
+        settings.provider,
+        settings.apiKey,
+        settings.baseUrl,
+      )
       if (!force) {
         const cached = MODEL_FETCH_CACHE.get(cacheKey)
         const isFresh =
@@ -914,83 +996,21 @@ export const AISettingsPanel: React.FC<{
               .filter((m): m is any => m !== null)
           }
 
-          const powerhouse: SelectOption[] = []
-          const reasoning: SelectOption[] = []
-          const fast: SelectOption[] = []
-          const experimental: SelectOption[] = []
-
-          filtered.forEach((m: any) => {
-            const id = m.name.replace('models/', '')
-            const lowerId = id.toLowerCase()
-            const option: SelectOption = {
-              value: id,
-              label: id,
-              icon: <GeminiIcon />,
-            }
-
-            // Priority-based categorization
-
-            // 1. Reasoning (Chain of Thought)
-            if (
-              lowerId.includes('deep-think') ||
-              lowerId.includes('thinking') ||
-              lowerId.startsWith('o1') ||
-              lowerId.startsWith('o3')
-            ) {
-              reasoning.push(option)
-            }
-            // 2. Powerhouse (Frontier Intelligence)
-            // Includes Gemini 2.5+, 3.0, Ultra
-            else if (
-              lowerId.includes('gemini-3') ||
-              lowerId.includes('gemini-2.5') ||
-              lowerId.includes('ultra')
-            ) {
-              powerhouse.push(option)
-            }
-            // 3. Fast / Efficient (Includes Legacy Frontier)
-            // Includes 1.5 Pro, Flash, Mini, GPT-4
-            else if (
-              lowerId.includes('flash') ||
-              lowerId.includes('mini') ||
-              lowerId.includes('haiku') ||
-              lowerId.includes('pro') ||
-              lowerId.includes('gpt-4')
-            ) {
-              fast.push(option)
-            }
-            // 4. Other
-            else {
-              experimental.push(option)
-            }
-          })
+          const options = filtered
+            .map((model: any) => {
+              const id = model.name.replace('models/', '')
+              return { value: id, label: id, icon: <GeminiIcon /> }
+            })
+            .sort((a, b) =>
+              a.value.localeCompare(b.value, undefined, { numeric: true }),
+            )
 
           groups = [
             {
-              label: `🧠 ${t('settings.model_category.reasoning')}`,
-              options: reasoning.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
+              label: t('settings.model_category.other'),
+              options,
             },
-            {
-              label: `💪 ${t('settings.model_category.powerhouse')}`,
-              options: powerhouse.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-            {
-              label: `⚡ ${t('settings.model_category.fast')}`,
-              options: fast.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-            {
-              label: `🧪 ${t('settings.model_category.other')}`,
-              options: experimental.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-          ].filter((g) => g.options.length > 0)
+          ]
         } else if (settings.provider === 'openai') {
           const res = await fetch('https://api.openai.com/v1/models', {
             headers: { Authorization: `Bearer ${settings.apiKey}` },
@@ -1001,70 +1021,26 @@ export const AISettingsPanel: React.FC<{
 
           const blacklist =
             /(audio|realtime|instruct|vision|embedding|dall-e|tts|whisper)/i
-          const filtered = data.data.filter((m: any) => {
-            const id = m.id.toLowerCase()
-            return (
-              (id.startsWith('gpt') ||
-                id.startsWith('o1') ||
-                id.startsWith('o3')) &&
-              !blacklist.test(id)
-            )
-          })
+          const filtered = data.data.filter(
+            (model: any) => !blacklist.test(model.id.toLowerCase()),
+          )
 
-          const powerhouse: SelectOption[] = []
-          const reasoning: SelectOption[] = []
-          const fast: SelectOption[] = []
-          const experimental: SelectOption[] = []
-
-          filtered.forEach((m: any) => {
-            const id = m.id
-            const lowerId = id.toLowerCase()
-            const option: SelectOption = {
-              value: id,
-              label: id,
+          const options = filtered
+            .map((model: any) => ({
+              value: model.id,
+              label: model.id,
               icon: <OpenAIIcon />,
-            }
-
-            if (lowerId.startsWith('o1') || lowerId.startsWith('o3')) {
-              reasoning.push(option)
-            } else if (lowerId.includes('gpt-5')) {
-              powerhouse.push(option)
-            } else if (lowerId.includes('gpt-4')) {
-              // Per user, GPT-4 is now "outdated" / efficient compared to GPT-5
-              fast.push(option)
-            } else if (lowerId.includes('mini')) {
-              fast.push(option)
-            } else {
-              experimental.push(option)
-            }
-          })
+            }))
+            .sort((a, b) =>
+              a.value.localeCompare(b.value, undefined, { numeric: true }),
+            )
 
           groups = [
             {
-              label: `🧠 ${t('settings.model_category.reasoning')}`,
-              options: reasoning.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
+              label: t('settings.model_category.other'),
+              options,
             },
-            {
-              label: `💪 ${t('settings.model_category.powerhouse')}`,
-              options: powerhouse.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-            {
-              label: `⚡ ${t('settings.model_category.fast')}`,
-              options: fast.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-            {
-              label: `🧪 ${t('settings.model_category.other')}`,
-              options: experimental.sort((a, b) =>
-                b.value.localeCompare(a.value, undefined, { numeric: true }),
-              ),
-            },
-          ].filter((g) => g.options.length > 0)
+          ]
         } else if (settings.provider === 'anthropic') {
           const res = await fetch('https://api.anthropic.com/v1/models', {
             headers: {
@@ -1091,6 +1067,39 @@ export const AISettingsPanel: React.FC<{
               ),
             },
           ]
+        } else if (
+          settings.provider === 'local' ||
+          settings.provider === 'custom'
+        ) {
+          const baseUrl = settings.baseUrl?.trim().replace(/\/+$/, '')
+          if (!baseUrl) throw new Error('Base URL is required')
+
+          const res = await fetch(`${baseUrl}/models`, {
+            headers: settings.apiKey
+              ? { Authorization: `Bearer ${settings.apiKey}` }
+              : undefined,
+            signal: abortController.signal,
+          })
+          if (!res.ok) throw new Error('Failed to fetch compatible models')
+          const data = await res.json()
+          const options = Array.isArray(data?.data)
+            ? data.data
+                .filter((model: any) => typeof model?.id === 'string')
+                .map((model: any) => ({
+                  value: model.id,
+                  label: model.id,
+                  icon: <MdSmartToy />,
+                }))
+            : []
+
+          groups = [
+            {
+              label: t('settings.model_category.other'),
+              options: options.sort((a, b) =>
+                a.value.localeCompare(b.value, undefined, { numeric: true }),
+              ),
+            },
+          ]
         }
 
         if (abortController.signal.aborted) return
@@ -1112,17 +1121,8 @@ export const AISettingsPanel: React.FC<{
         }
       }
     },
-    [settings.apiKey, settings.provider, t],
+    [settings.apiKey, settings.provider, settings.baseUrl, t],
   )
-
-  React.useEffect(() => {
-    if (
-      settings.apiKey &&
-      ['openai', 'gemini', 'anthropic'].includes(settings.provider)
-    ) {
-      void fetchModels()
-    }
-  }, [settings.provider, settings.apiKey, fetchModels])
 
   return (
     <div
@@ -1207,8 +1207,8 @@ export const AISettingsPanel: React.FC<{
               }
             />
 
-            {settings.provider !== 'local' &&
-              settings.provider !== 'custom' && (
+            {settings.provider !== 'local' && settings.provider !== 'custom' && (
+              <>
                 <PremiumInput
                   label={t('api_key')}
                   value={settings.apiKey}
@@ -1216,7 +1216,11 @@ export const AISettingsPanel: React.FC<{
                   placeholder={t('settings.api_key_placeholder')}
                   type="password"
                 />
-              )}
+                <p className="text-subtle -mt-2 px-1 text-[10px] leading-relaxed">
+                  {t('settings.api_key_session_only')}
+                </p>
+              </>
+            )}
 
             {/* Local / Custom specific fields */}
             {(settings.provider === 'local' ||
@@ -1255,28 +1259,142 @@ export const AISettingsPanel: React.FC<{
               </div>
             )}
 
+            <div className="bg-primary/5 border-primary/10 space-y-2 rounded-xl border p-3">
+              <p className="text-primary/80 text-[11px] leading-relaxed">
+                {t('settings.connection_permission_desc')}
+              </p>
+              <button
+                type="button"
+                onClick={() => void requestConnectionPermission()}
+                disabled={
+                  connectionPermissionStatus === 'checking' ||
+                  !isConnectionPermissionReady
+                }
+                className={clsx(
+                  'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70',
+                  connectionPermissionStatus === 'granted'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-primary hover:bg-primary-dark',
+                )}
+              >
+                {connectionPermissionStatus === 'granted' && <MdCheck />}
+                {connectionPermissionStatus === 'checking'
+                  ? t('chatbot.thinking')
+                  : connectionPermissionStatus === 'granted'
+                  ? t('settings.connection_allowed')
+                  : t('settings.allow_connection')}
+              </button>
+              {connectionConfigurationError && (
+                <p
+                  role="status"
+                  className="text-[10px] text-amber-700 dark:text-amber-300"
+                >
+                  {t(`error.${connectionConfigurationError}`)}
+                </p>
+              )}
+              {connectionPermissionStatus === 'granted' && (
+                <p
+                  role="status"
+                  className="flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+                >
+                  <MdCheck />
+                  {t('settings.connection_allowed')}
+                </p>
+              )}
+              {connectionPermissionStatus === 'denied' && (
+                <p
+                  role="status"
+                  className="text-[10px] text-red-600 dark:text-red-300"
+                >
+                  {t('error.host_permission_denied')}
+                </p>
+              )}
+            </div>
+
+            {isCloudProvider && (
+              <div className="bg-surface-1 border-border-light dark:border-border-dark space-y-3 rounded-xl border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-subtle ml-1 block text-[10px] font-bold uppercase tracking-wider">
+                      {t('settings.remote_data_consent')}
+                    </span>
+                    <span className="text-subtle ml-1 block max-w-[240px] text-[9px] leading-tight opacity-70">
+                      {t('settings.remote_data_consent_desc')}
+                    </span>
+                  </div>
+                  <Switch
+                    checked={
+                      settings.remoteDataConsent &&
+                      settings.remoteDataConsentProvider === settings.provider
+                    }
+                    onChange={updateRemoteDataConsent}
+                  />
+                </div>
+                <label className="text-subtle flex items-center justify-between gap-3 text-[10px]">
+                  <span>{t('settings.share_annotations')}</span>
+                  <Switch
+                    checked={settings.includeAnnotationsInRemotePrompts}
+                    onChange={(checked) => {
+                      if (settings.remoteDataConsent) {
+                        handleChange(
+                          'includeAnnotationsInRemotePrompts',
+                          checked,
+                        )
+                      }
+                    }}
+                  />
+                </label>
+                <label className="text-subtle flex items-center justify-between gap-3 text-[10px]">
+                  <span>{t('settings.share_definitions')}</span>
+                  <Switch
+                    checked={settings.includeDefinitionsInRemotePrompts}
+                    onChange={(checked) => {
+                      if (settings.remoteDataConsent) {
+                        handleChange(
+                          'includeDefinitionsInRemotePrompts',
+                          checked,
+                        )
+                      }
+                    }}
+                  />
+                </label>
+                <label className="text-subtle flex items-center justify-between gap-3 text-[10px]">
+                  <span>{t('settings.auto_repair_citations')}</span>
+                  <Switch
+                    checked={settings.autoRepairCitations}
+                    onChange={(checked) => {
+                      if (settings.remoteDataConsent) {
+                        handleChange('autoRepairCitations', checked)
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+
             <div className="space-y-2">
               <div className="ml-1 flex items-center justify-between">
                 <label className="text-subtle block text-[11px] font-bold uppercase tracking-wider">
                   {t('model')}
                 </label>
-                {['openai', 'gemini', 'anthropic'].includes(
-                  settings.provider,
-                ) &&
-                  settings.apiKey && (
-                    <button
-                      onClick={() => void fetchModels({ force: true })}
-                      disabled={loadingModels}
-                      className="text-primary flex items-center gap-1 text-[10px] font-medium hover:underline disabled:opacity-50"
-                    >
-                      <MdRefresh
-                        className={clsx(loadingModels && 'animate-spin')}
-                      />
-                      {loadingModels
-                        ? t('chatbot.thinking').replace('...', '')
-                        : t('maintenance.refresh_list')}
-                    </button>
-                  )}
+                {(settings.provider === 'local' ||
+                  (['openai', 'gemini', 'anthropic', 'custom'].includes(
+                    settings.provider,
+                  ) &&
+                    settings.apiKey)) && (
+                  <button
+                    onClick={() => void fetchModels({ force: true })}
+                    disabled={loadingModels}
+                    className="text-primary flex items-center gap-1 text-[10px] font-medium hover:underline disabled:opacity-50"
+                  >
+                    <MdRefresh
+                      className={clsx(loadingModels && 'animate-spin')}
+                    />
+                    {loadingModels
+                      ? t('chatbot.thinking').replace('...', '')
+                      : t('maintenance.refresh_list')}
+                  </button>
+                )}
               </div>
 
               <PremiumSelect
@@ -1354,9 +1472,7 @@ export const AISettingsPanel: React.FC<{
                   <div className="relative inline-flex shrink-0 self-center">
                     <Switch
                       checked={settings.downloadLocalModels}
-                      onChange={(checked) =>
-                        handleChange('downloadLocalModels', checked)
-                      }
+                      onChange={updateLocalModelConsent}
                     />
                   </div>
                 </div>
@@ -1372,14 +1488,25 @@ export const AISettingsPanel: React.FC<{
                 <label className="text-subtle ml-1 block text-[10px] font-bold uppercase tracking-wider">
                   {t('settings.local_models_status')}
                 </label>
+                {!settings.downloadLocalModels && (
+                  <p className="text-subtle -mt-1 ml-1 text-[9px] leading-tight">
+                    {t('settings.local_models_download_required')}
+                  </p>
+                )}
                 <div className="flex items-center justify-center gap-4">
                   <StatusIndicator
                     label="SLM"
                     status={slmStatus}
                     progress={slmProgress}
-                    onClick={preloadSlm}
+                    onClick={
+                      settings.downloadLocalModels ? preloadSlm : undefined
+                    }
                     icon={<MdSmartToy className="text-[14px]" />}
-                    tooltip={t('slm_tooltip')}
+                    tooltip={
+                      settings.downloadLocalModels
+                        ? t('slm_tooltip')
+                        : t('settings.local_models_download_required')
+                    }
                     statusText={statusText}
                     errorMessage={slmError}
                     warningMessage={
@@ -1674,7 +1801,8 @@ export const AISettingsPanel: React.FC<{
             <strong className="text-primary mr-1 uppercase tracking-tighter">
               {t('settings.privacy_first')}
             </strong>
-            {t('settings.privacy_desc')}
+            {t('settings.api_key_session_only')}{' '}
+            {t('settings.remote_data_consent_desc')}
           </p>
         </div>
 

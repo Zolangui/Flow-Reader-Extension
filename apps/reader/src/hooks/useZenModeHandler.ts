@@ -1,10 +1,17 @@
-import { useEffect, useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { useZenMode } from '../state'
 
 declare const chrome: any
 
-export function useZenModeHandler() {
+interface ZenModeHandlerOptions {
+  /** Only one mounted instance should own global event listeners. */
+  listen?: boolean
+}
+
+export function useZenModeHandler({
+  listen = true,
+}: ZenModeHandlerOptions = {}) {
   const [isZenMode, setZenMode] = useZenMode()
 
   const toggleZenMode = useCallback(async () => {
@@ -51,6 +58,14 @@ export function useZenModeHandler() {
   }, [isZenMode, setZenMode])
 
   useEffect(() => {
+    if (!listen) return
+
+    const hasWindowApi =
+      typeof chrome !== 'undefined' &&
+      chrome.windows &&
+      chrome.windows.getCurrent &&
+      chrome.windows.onBoundsChanged
+
     const handleFullscreenChange = () => {
       // Sync state if user exits fullscreen via ESC or browser UI
       if (!document.fullscreenElement && isZenMode) {
@@ -70,13 +85,35 @@ export function useZenModeHandler() {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        toggleZenMode()
+      // F11 is handled by the browser, so leave Zen immediately instead of
+      // waiting for a window-state event that some browsers do not emit.
+      if (event.key === 'F11' && isZenMode) {
+        setZenMode(false)
+        return
+      }
+      if (event.key === 'Escape' && isZenMode) {
+        void toggleZenMode()
+      }
+    }
+
+    const syncChromeWindowState = async () => {
+      if (!hasWindowApi || !isZenMode) return
+      try {
+        const currentWindow = await chrome.windows.getCurrent()
+        if (currentWindow.state !== 'fullscreen') {
+          setZenMode(false)
+        }
+      } catch (error) {
+        console.error('Failed to synchronize Chrome fullscreen state:', error)
       }
     }
 
     if (isZenMode) {
       document.addEventListener('keydown', handleKeyDown)
+      if (hasWindowApi) {
+        void syncChromeWindowState()
+        chrome.windows.onBoundsChanged.addListener(syncChromeWindowState)
+      }
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
@@ -84,8 +121,11 @@ export function useZenModeHandler() {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('keydown', handleKeyDown)
+      if (hasWindowApi) {
+        chrome.windows.onBoundsChanged.removeListener(syncChromeWindowState)
+      }
     }
-  }, [isZenMode, setZenMode, toggleZenMode])
+  }, [isZenMode, listen, setZenMode, toggleZenMode])
 
   return { toggleZenMode }
 }

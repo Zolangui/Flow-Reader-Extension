@@ -13,7 +13,6 @@ import {
   MdAdd,
   MdStorage,
   MdTranslate,
-  MdClose,
 } from 'react-icons/md'
 
 import { db } from '../db'
@@ -54,8 +53,9 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
     startNewChat,
     deleteCurrentChat,
     setActiveChat,
+    clearChat,
   } = useChatbot()
-  const [settings, setSettings] = useAISettings()
+  const [settings] = useAISettings()
   const [input, setInput] = useState('')
   const t = useTranslation('ai')
   const msgsRef = useRef<HTMLDivElement>(null)
@@ -73,6 +73,7 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
   const [activeRequestId, setActiveRequestId] = useState<string>('')
   const lastInsightAt = useRef<Record<string, number>>({})
   const [isIndexing, setIsIndexing] = useState(false)
+  const [indexError, setIndexError] = useState<string | null>(null)
   const [indexProgress, setIndexProgress] = useState(0)
   const [slmStatus, setSlmStatus] = useState<ReturnType<typeof getSlmStatus>>(
     getSlmStatus(),
@@ -590,8 +591,12 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
     }
 
     const fileRecord = await db?.files.get(currentBook.id)
-    if (!fileRecord) return
+    if (!fileRecord) {
+      setIndexError(t('index.file_missing'))
+      return
+    }
 
+    setIndexError(null)
     setIsIndexing(true)
     setIndexProgress(0)
     try {
@@ -604,6 +609,11 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
       )
     } catch (e) {
       console.error('Indexing failed:', e)
+      setIndexError(
+        t('index.failed', {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      )
     } finally {
       setIsIndexing(false)
     }
@@ -650,6 +660,7 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
           <div className="w-full pt-4">
             <AISettingsPanel
               onClose={() => setForceSetup(false)}
+              onClearHistory={clearChat}
               isSetup={true}
               className="border-border-light dark:border-border-dark max-h-[500px] overflow-hidden rounded-2xl border shadow-2xl"
             />
@@ -680,7 +691,7 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
           <StatusIndicator
             label="SLM"
             status={slmStatus}
-            onClick={preloadSlm}
+            onClick={settings.downloadLocalModels ? preloadSlm : undefined}
             icon={<MdSmartToy className="text-[10px]" />}
             tooltip={t('slm_tooltip')}
             statusText={statusText}
@@ -696,10 +707,13 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
           <StatusIndicator
             label="RAG"
             status={embeddingStatus}
-            onClick={() =>
-              RAGService.preloadEmbeddings(undefined, {
-                downloadLocalModels: settings.downloadLocalModels,
-              })
+            onClick={
+              settings.downloadLocalModels
+                ? () =>
+                    RAGService.preloadEmbeddings(undefined, {
+                      downloadLocalModels: true,
+                    })
+                : undefined
             }
             icon={<MdStorage className="text-[10px]" />}
             tooltip={t('rag_tooltip')}
@@ -764,61 +778,10 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
           </select>
           <IconButton
             Icon={MdAdd}
-            title={t('chatbot.new_chat')}
+            title={t('new_chat_tooltip')}
             onClick={() => startNewChat()}
             disabled={state.isLoading}
           />
-        </div>
-      )}
-
-      {/* Settings Panel embedded in Sidebar (if requested) or separate modal */}
-      {showSettings && (
-        <div className="border-border-light dark:border-border-dark animate-in fade-in slide-in-from-top-2 absolute top-12 right-4 z-50 w-72 rounded-xl border bg-white p-4 shadow-2xl dark:bg-gray-900">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-bold">{t('settings.config_title')}</h3>
-            <button
-              onClick={() => setShowSettings(false)}
-              className="text-subtle hover:text-text"
-            >
-              <MdClose />
-            </button>
-          </div>
-          <div className="space-y-4">
-            <label className="bg-surface-1 border-border-light dark:border-border-dark hover:border-primary/50 flex cursor-pointer items-center justify-between rounded-lg border p-2 transition-all">
-              <div className="flex flex-col pr-2">
-                <span className="text-xs font-semibold">
-                  {t('settings.download_models')}
-                </span>
-                <span className="text-subtle text-[9px] leading-tight">
-                  {t('settings.download_models_desc')}
-                </span>
-              </div>
-              <div className="relative inline-flex shrink-0 cursor-pointer items-center self-center">
-                <input
-                  type="checkbox"
-                  checked={settings.downloadLocalModels}
-                  onChange={(e) => {
-                    const newVal = e.target.checked
-                    setSettings((prev) => ({
-                      ...prev,
-                      downloadLocalModels: newVal,
-                    }))
-                  }}
-                  className="peer sr-only"
-                />
-                <div className="bg-surface-variant after:bg-surface-1 after:border-border-light dark:after:border-border-dark peer-checked:after:border-surface-1 peer-checked:bg-primary peer relative h-5 w-9 overflow-hidden rounded-full after:absolute after:top-[2px] after:left-[4px] after:box-border after:h-4 after:w-4 after:rounded-full after:border after:transition-all after:content-[''] peer-checked:after:left-[16px] peer-focus:outline-none"></div>
-              </div>
-            </label>
-            <button
-              onClick={() => {
-                setShowSettings(false)
-                setForceSetup(true)
-              }}
-              className="text-primary bg-primary/10 hover:bg-primary/20 w-full rounded-lg py-2 text-xs font-bold"
-            >
-              {t('settings.advanced_settings')}
-            </button>
-          </div>
         </div>
       )}
 
@@ -866,6 +829,15 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
                   </span>
                 </button>
               </div>
+            )}
+
+            {indexError && !isIndexing && (
+              <p
+                role="alert"
+                className="text-xs font-medium text-red-700 dark:text-red-300"
+              >
+                {indexError}
+              </p>
             )}
 
             {isIndexing && (
@@ -967,7 +939,7 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
             <button
               onClick={stopGeneration}
               className="animate-in zoom-in absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-red-500 transition-all duration-200 hover:bg-red-500/10 hover:text-red-600"
-              title="Stop Generating"
+              title={t('chatbot.stop')}
             >
               <MdStop size={20} />
             </button>
@@ -991,6 +963,7 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
         <div className="animate-in slide-in-from-right ai-settings-panel absolute inset-0 z-[200] flex flex-col bg-white shadow-2xl duration-200 dark:bg-gray-900">
           <AISettingsPanel
             onClose={() => setShowSettings(false)}
+            onClearHistory={clearChat}
             className="h-full w-full"
           />
         </div>

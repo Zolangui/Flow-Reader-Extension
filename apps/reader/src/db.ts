@@ -31,6 +31,17 @@ export interface ChatSessionRecord {
   updatedAt: number
 }
 
+export interface PageCountLayoutSample {
+  characters: number
+  pages: number
+}
+
+export interface PageCountLayoutRecord {
+  pageCount: number
+  samples: Record<string, PageCountLayoutSample>
+  updatedAt: number
+}
+
 export interface BookRecord {
   // TODO: use file hash as id
   id: string
@@ -43,6 +54,8 @@ export interface BookRecord {
   percentage?: number
   pageCount?: number // Total page count (from pageList or locations.length())
   pageCountEstimated?: boolean // True if estimate, false if precise
+  pageCountLayoutKey?: string
+  pageCountLayouts?: Record<string, PageCountLayoutRecord>
   locations?: string // Serialized EPUB.js locations JSON for CFI→page mapping
   definitions: string[]
   annotations: Annotation[]
@@ -80,21 +93,20 @@ export class DB extends Dexie {
 
     // Versions reordered to appear chronologically at the end
 
-
     // SOTA v7.2: Add ragVersion for explicit index compatibility checks
     this.version(16).stores({
-      indices: '[bookId+kind], bookId, ragVersion'
+      indices: '[bookId+kind], bookId, ragVersion',
     })
 
     // SOTA v6.3: Clean Migration for Indices (Fixes SchemaError)
     // 2. Re-create with correct compound primary key AND individual indices for fallback queries
     this.version(15).stores({
-      indices: '[bookId+kind], bookId'
+      indices: '[bookId+kind], bookId',
     })
 
     // 1. Drop the table first to remove old schema conflicts (Nuclear Option)
     this.version(14).stores({
-      indices: null
+      indices: null,
     })
 
     this.version(13).stores({
@@ -108,7 +120,7 @@ export class DB extends Dexie {
 
     // Intermediate version to drop the old 'indices' table (allows changing PK)
     this.version(12).stores({
-      indices: null
+      indices: null,
     })
 
     this.version(11).stores({
@@ -142,7 +154,6 @@ export class DB extends Dexie {
       files: 'id',
       covers: 'id',
     })
-
 
     this.version(7).stores({
       books:
@@ -208,14 +219,14 @@ export class DB extends Dexie {
       })
       .upgrade(async (t) => {
         const books = await t.table('books').toArray()
-          ;['covers', 'files'].forEach((tableName) => {
-            t.table(tableName)
-              .toCollection()
-              .modify((r) => {
-                const book = books.find((b) => b.name === r.id)
-                if (book) r.id = book.id
-              })
-          })
+        ;['covers', 'files'].forEach((tableName) => {
+          t.table(tableName)
+            .toCollection()
+            .modify((r) => {
+              const book = books.find((b) => b.name === r.id)
+              if (book) r.id = book.id
+            })
+        })
       })
 
     this.version(1).stores({

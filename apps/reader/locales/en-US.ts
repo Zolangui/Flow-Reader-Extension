@@ -32,6 +32,17 @@ export default {
   'typography.page_view.single_page': 'Single Page',
   'typography.page_view.double_page': 'Double Page',
   'typography.font_family': 'Font Family',
+  'typography.font_family_hint':
+    'Choose a standard font or load the fonts installed on this device.',
+  'typography.font_family_load_local': 'Load device fonts',
+  'typography.font_family_loading': 'Loading fonts...',
+  'typography.font_family_ready': 'Device fonts loaded',
+  'typography.font_family_unsupported':
+    'This browser cannot list device fonts. You can still enter a font family name.',
+  'typography.font_family_failed':
+    'Unable to load device fonts. You can still enter a font family name.',
+  'typography.font_family_custom': 'Custom font family',
+  'typography.font_family_custom_placeholder': 'Enter an installed font name',
   'typography.font_size': 'Font Size',
   'typography.font_weight': 'Font Weight',
   'typography.line_height': 'Line Height',
@@ -43,6 +54,9 @@ export default {
   'theme.title': 'Theme',
   'audio.title': 'Ambience',
   'zen.title': 'Zen Mode',
+  'zen.exit_hint': 'Zen mode is on. Press Esc to exit.',
+  'zen.exit_action': 'Exit Zen',
+  'zen.dismiss_hint': 'Dismiss hint',
   'theme.source_color': 'Source Color',
   'theme.background_color': 'Background Color',
 
@@ -229,6 +243,7 @@ export default {
   'ai.reindex_success': 'Book re-indexed successfully.',
   'ai.reindex_error': 'Failed to re-index book.',
   'ai.index.no_book': 'No active book to index.',
+  'ai.index.file_missing': 'This book file is not available locally.',
   'ai.index.success':
     'Book indexed successfully! The AI can now answer questions about its content.',
   'ai.index.failed': 'Indexing failed: {error}',
@@ -251,15 +266,15 @@ export default {
   'ai.settings.model_category.fast': 'Fast / Efficient',
   'ai.settings.model_category.other': 'Other',
   'ai.settings.model_hint.gemini':
-    'Best for speed: gemini-1.5-flash. Best for quality: gemini-1.5-pro.',
+    'Choose a currently available Gemini model. Use Refresh List after adding your API key.',
   'ai.settings.model_hint.openai':
-    'Best for speed: gpt-4o-mini. Best for quality: gpt-4o.',
+    'Choose a currently available OpenAI model. Use Refresh List after adding your API key.',
   'ai.settings.model_hint.anthropic':
-    'Highly recommended: claude-3-5-sonnet-latest.',
+    'Choose a currently available Anthropic model. Use Refresh List after adding your API key.',
   'ai.settings.model_hint.local':
-    'Connect to local inference servers like Ollama or LM Studio. No data leaves your machine.',
+    'Enter the model ID exposed by your local server, or use Refresh List when it is supported.',
   'ai.settings.model_hint.custom':
-    'Connect to any OpenAI-compatible API proxy or specialized endpoint (e.g., OpenRouter, Anyscale).',
+    'Enter a model ID supported by this endpoint. Refresh List is available for compatible servers.',
   'ai.settings.claude_series': 'Claude Series',
   'ai.settings.api_key_placeholder': 'Paste your key here...',
   'ai.settings.proxy_api_key': 'Proxy API Key (Optional)',
@@ -322,6 +337,7 @@ export default {
   'ai.error.rate_limit': 'Rate limit exceeded ({reason}). Please slow down.',
   'ai.error.unsupported_provider': 'Unsupported provider.',
   'ai.error.api_key_missing': 'API Key is not configured.',
+  'ai.error.model_required': 'Choose a model before sending a request.',
   'ai.error.generation_failed': 'Failed to generate response from AI provider.',
 
   // AI Selection Menu
@@ -348,4 +364,31 @@ export default {
   'ai.status.preload_timeout': 'Initialization timed out (click to retry)',
   'ai.status.click_to_download': 'Click to Download',
   'ai.status.not_indexed': 'Not indexed',
+  'ai.settings.api_key_session_only':
+    'Your API key is kept only for this browser session and is cleared when it ends.',
+  'ai.settings.connection_permission_desc':
+    'Allow the browser to access the selected AI provider or local server. This does not test your API key or confirm a connection.',
+  'ai.settings.allow_connection': 'Allow Provider Access',
+  'ai.settings.connection_allowed': 'Provider access allowed',
+  'ai.settings.local_models_download_required':
+    'Enable "Download Models" above to activate SLM downloads.',
+  'ai.settings.remote_data_consent': 'Send book data to this provider',
+  'ai.settings.remote_data_consent_desc':
+    'Allows the question, recent chat, and selected book excerpts to be sent to the selected provider.',
+  'ai.settings.share_annotations': 'Also send my notes',
+  'ai.settings.share_definitions': 'Also send my saved definitions',
+  'ai.settings.auto_repair_citations': 'Automatically retry citation repair',
+  'ai.error.base_url_required': 'Enter a server URL first.',
+  'ai.error.invalid_base_url':
+    'Use HTTPS for a supported provider, or a localhost URL for Local AI.',
+  'ai.error.unsupported_custom_host':
+    'This custom provider is not in the supported secure-host list.',
+  'ai.error.host_permission_required':
+    'Allow the provider connection in AI settings before sending a request.',
+  'ai.error.host_permission_denied': 'Connection permission was not granted.',
+  'ai.error.remote_consent_required':
+    'Confirm remote data sharing for this provider before sending a request.',
+  'ai.error.no_active_book': 'Open a book before using the reading assistant.',
+  'ai.error.index_incompatible':
+    'The AI index settings changed. Re-index this book before asking another question.',
 } as const

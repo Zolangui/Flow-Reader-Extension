@@ -16,6 +16,9 @@ export default {
   'toc.library': 'ライブラリ',
 
   'zen.title': '禅モード',
+  'zen.exit_hint': 'Zen モードが有効です。Esc キーで終了できます。',
+  'zen.exit_action': 'Zen モードを終了',
+  'zen.dismiss_hint': 'ヒントを閉じる',
 
   'search.title': '検索',
   'search.files.result': '{m}件中 {n}件該当',
@@ -34,6 +37,18 @@ export default {
   'typography.page_view.single_page': '片ページ',
   'typography.page_view.double_page': '見開きページ',
   'typography.font_family': 'フォントファミリー',
+  'typography.font_family_hint':
+    '標準フォントを選ぶか、このデバイスにインストールされているフォントを読み込んでください。',
+  'typography.font_family_load_local': 'デバイスのフォントを読み込む',
+  'typography.font_family_loading': 'フォントを読み込んでいます...',
+  'typography.font_family_ready': 'デバイスのフォントを読み込みました',
+  'typography.font_family_unsupported':
+    'このブラウザではデバイスのフォントを一覧表示できません。フォント名は手入力できます。',
+  'typography.font_family_failed':
+    'デバイスのフォントを読み込めませんでした。フォント名は手入力できます。',
+  'typography.font_family_custom': 'カスタムフォント名',
+  'typography.font_family_custom_placeholder':
+    'インストール済みフォント名を入力',
   'typography.font_size': 'フォントサイズ',
   'typography.font_weight': 'フォントウェイト',
   'typography.line_height': '行の高さ',
@@ -231,6 +246,7 @@ export default {
   'ai.reindex_success': '本が正常に再インデックスされました。',
   'ai.reindex_error': '本の再インデックスに失敗しました。',
   'ai.index.no_book': 'インデックスするアクティブな本がありません。',
+  'ai.index.file_missing': 'この本のファイルはローカルにありません。',
   'ai.index.success':
     '本のインデックスが完了しました！AIが内容に関する質問に答えられるようになりました。',
   'ai.index.failed': 'インデックスに失敗しました: {error}',
@@ -254,13 +270,15 @@ export default {
   'ai.settings.model_category.fast': '高速・効率的',
   'ai.settings.model_category.other': 'その他',
   'ai.settings.model_hint.gemini':
-    '速度重視：gemini-1.5-flash。品質重視：gemini-1.5-pro。',
-  'ai.settings.model_hint.openai': '速度重視：gpt-4o-mini。品質重視：gpt-4o。',
-  'ai.settings.model_hint.anthropic': '推奨：claude-3-5-sonnet-latest。',
+    '現在のアカウントで利用できる Gemini モデルを選択してください。API キーを入力した後にリストを更新してください。',
+  'ai.settings.model_hint.openai':
+    '現在のアカウントで利用できる OpenAI モデルを選択してください。API キーを入力した後にリストを更新してください。',
+  'ai.settings.model_hint.anthropic':
+    '現在のアカウントで利用できる Anthropic モデルを選択してください。API キーを入力した後にリストを更新してください。',
   'ai.settings.model_hint.local':
-    'OllamaやLM Studioに接続します。データは外部に出ません。',
+    'ローカルサーバーが公開するモデル ID を入力するか、対応している場合はリストを更新してください。',
   'ai.settings.model_hint.custom':
-    'OpenAI互換プロキシやエンドポイントを使用します。',
+    'このエンドポイントで対応するモデル ID を入力してください。互換サーバーではリストを更新できます。',
   'ai.settings.claude_series': 'Claude シリーズ',
   'ai.settings.api_key_placeholder': 'ここにキーを貼り付けてください...',
   'ai.settings.proxy_api_key': 'プロキシAPIキー（任意）',
@@ -324,6 +342,8 @@ export default {
     'レート制限を超えました（{reason}）。速度を落としてください。',
   'ai.error.unsupported_provider': 'サポートされていないプロバイダーです。',
   'ai.error.api_key_missing': 'APIキーが設定されていません。',
+  'ai.error.model_required':
+    'リクエストを送信する前にモデルを選択してください。',
   'ai.error.generation_failed': 'AIプロバイダーからの応答生成に失敗しました。',
   // AI Selection Menu
   'ai.selection.explain': '説明',
@@ -350,4 +370,31 @@ export default {
     '事前読み込みがタイムアウトしました（再試行してください）',
   'ai.status.click_to_download': 'クリックしてダウンロード',
   'ai.status.not_indexed': '未インデックス',
+  'ai.settings.api_key_session_only':
+    'あなたの API キーはこのブラウザーセッションの間だけ保持され、終了時に削除されます。',
+  'ai.settings.connection_permission_desc':
+    '選択した AI プロバイダーまたはローカルサーバーへのブラウザーアクセスを許可します。API キーの確認や接続テストは行いません。',
+  'ai.settings.allow_connection': 'プロバイダーへのアクセスを許可',
+  'ai.settings.connection_allowed': 'プロバイダーへのアクセスが許可されました',
+  'ai.settings.local_models_download_required':
+    'SLM \u306e\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\u3092\u6709\u52b9\u306b\u3059\u308b\u306b\u306f\u3001\u4e0a\u306e\u300c\u30e2\u30c7\u30eb\u3092\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\u300d\u3092\u30aa\u30f3\u306b\u3057\u3066\u304f\u3060\u3055\u3044\u3002',
+  'ai.settings.remote_data_consent': 'このプロバイダーに書籍データを送信',
+  'ai.settings.remote_data_consent_desc':
+    '質問、最近のチャット、選択された書籍の抜粋を選択したプロバイダーに送信できます。',
+  'ai.settings.share_annotations': '注釈も送信',
+  'ai.settings.share_definitions': '保存した定義も送信',
+  'ai.settings.auto_repair_citations': '引用の修復を自動で再試行',
+  'ai.error.base_url_required': 'まずサーバー URL を入力してください。',
+  'ai.error.invalid_base_url':
+    '対応プロバイダーには HTTPS、ローカル AI には localhost URL を使用してください。',
+  'ai.error.unsupported_custom_host':
+    'このカスタムプロバイダーは対応する安全なホストのリストにありません。',
+  'ai.error.host_permission_required':
+    'リクエストを送信する前に、AI 設定でプロバイダー接続を許可してください。',
+  'ai.error.host_permission_denied': '接続許可が与えられませんでした。',
+  'ai.error.remote_consent_required':
+    'リクエストを送信する前に、このプロバイダーへのリモートデータ共有を確認してください。',
+  'ai.error.no_active_book': '読書アシスタントを使う前に書籍を開いてください。',
+  'ai.error.index_incompatible':
+    'AI インデックスの設定が変更されました。次の質問の前にこの書籍を再インデックスしてください。',
 } as const

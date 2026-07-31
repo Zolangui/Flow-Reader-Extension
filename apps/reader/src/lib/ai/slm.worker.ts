@@ -38,7 +38,7 @@ const IS_FIREFOX =
 
 // SOTA (2026): Gemma 3 270M Instruct (GGUF) - good quality/size tradeoff.
 const DEFAULT_MODEL_URL =
-  'https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/gemma-3-270m-it-Q6_K.gguf'
+  'https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/e45c5af7019a8d4f30dc82c5e0f35b0cce139631/gemma-3-270m-it-Q6_K.gguf'
 
 // Cache-buster for local extension assets (workers/wasm). Firefox can keep old
 // module-worker code around longer than you'd expect across reloads.
@@ -353,9 +353,7 @@ class DirectOPFSCacheManager {
     }
   }
 
-  async getMetadata(
-    nameOrURL: string,
-  ): Promise<{
+  async getMetadata(nameOrURL: string): Promise<{
     originalSize: number
     originalURL: string
     etag: string

@@ -26,6 +26,18 @@ export default {
   'typography.page_view.single_page': 'Página única',
   'typography.page_view.double_page': 'Doble página',
   'typography.font_family': 'Fuente',
+  'typography.font_family_hint':
+    'Elige una fuente estándar o carga las fuentes instaladas en este dispositivo.',
+  'typography.font_family_load_local': 'Cargar fuentes del dispositivo',
+  'typography.font_family_loading': 'Cargando fuentes...',
+  'typography.font_family_ready': 'Fuentes del dispositivo cargadas',
+  'typography.font_family_unsupported':
+    'Este navegador no puede mostrar las fuentes del dispositivo. Aun así, puedes escribir el nombre de una fuente.',
+  'typography.font_family_failed':
+    'No se pudieron cargar las fuentes del dispositivo. Aun así, puedes escribir el nombre de una fuente.',
+  'typography.font_family_custom': 'Familia de fuente personalizada',
+  'typography.font_family_custom_placeholder':
+    'Escribe el nombre de una fuente instalada',
   'typography.font_size': 'Tamaño de fuente',
   'typography.font_weight': 'Peso de fuente',
   'typography.line_height': 'Altura de línea',
@@ -36,6 +48,9 @@ export default {
   'theme.title': 'Tema',
   'audio.title': 'Ambiente',
   'zen.title': 'Modo Zen',
+  'zen.exit_hint': 'El modo Zen está activo. Pulsa Esc para salir.',
+  'zen.exit_action': 'Salir del modo Zen',
+  'zen.dismiss_hint': 'Ocultar aviso',
   'theme.source_color': 'Color de origen',
   'theme.background_color': 'Color de fondo',
   'settings.title': 'Configuración',
@@ -197,6 +212,8 @@ export default {
   'ai.reindex_success': 'Libro reindexado correctamente.',
   'ai.reindex_error': 'No se pudo reindexar el libro.',
   'ai.index.no_book': 'No hay un libro activo para indexar.',
+  'ai.index.file_missing':
+    'El archivo de este libro no está disponible localmente.',
   'ai.index.success':
     'Libro indexado correctamente. Ahora la IA puede responder sobre su contenido.',
   'ai.index.failed': 'Fallo al indexar: {error}',
@@ -220,15 +237,15 @@ export default {
   'ai.settings.model_category.fast': 'Rápido / eficiente',
   'ai.settings.model_category.other': 'Otros',
   'ai.settings.model_hint.gemini':
-    'Mejor para velocidad: gemini-1.5-flash. Mejor para calidad: gemini-1.5-pro.',
+    'Elige un modelo Gemini disponible actualmente para tu cuenta. Actualiza la lista después de introducir tu clave de API.',
   'ai.settings.model_hint.openai':
-    'Mejor para velocidad: gpt-4o-mini. Mejor para calidad: gpt-4o.',
+    'Elige un modelo OpenAI disponible actualmente para tu cuenta. Actualiza la lista después de introducir tu clave de API.',
   'ai.settings.model_hint.anthropic':
-    'Muy recomendado: claude-3-5-sonnet-latest.',
+    'Elige un modelo Anthropic disponible actualmente para tu cuenta. Actualiza la lista después de introducir tu clave de API.',
   'ai.settings.model_hint.local':
-    'Conecta a servidores locales como Ollama o LM Studio. Tus datos no salen de tu máquina.',
+    'Introduce el ID del modelo expuesto por tu servidor local o actualiza la lista cuando sea compatible.',
   'ai.settings.model_hint.custom':
-    'Conecta a cualquier proxy compatible con OpenAI o endpoint especializado (p.ej. OpenRouter, Anyscale).',
+    'Introduce un ID de modelo compatible con este endpoint. La lista se puede actualizar en servidores compatibles.',
   'ai.settings.claude_series': 'Serie Claude',
   'ai.settings.api_key_placeholder': 'Pega tu clave aqui...',
   'ai.settings.proxy_api_key': 'Clave API del proxy (opcional)',
@@ -287,6 +304,7 @@ export default {
   'ai.error.rate_limit': 'Límite de tasa excedido ({reason}). Ve más despacio.',
   'ai.error.unsupported_provider': 'Proveedor no compatible.',
   'ai.error.api_key_missing': 'La clave API no está configurada.',
+  'ai.error.model_required': 'Elige un modelo antes de enviar una solicitud.',
   'ai.error.generation_failed':
     'No se pudo generar una respuesta del proveedor de IA.',
   'ai.selection.explain': 'Explicar',
@@ -309,4 +327,33 @@ export default {
     'La inicialización agotó el tiempo (haz clic para reintentar)',
   'ai.status.click_to_download': 'Clic para Descargar',
   'ai.status.not_indexed': 'No indexado',
+  'ai.settings.api_key_session_only':
+    'Tu clave de API se conserva solo durante esta sesion del navegador y se elimina al terminar.',
+  'ai.settings.connection_permission_desc':
+    'Permite que el navegador acceda al proveedor de IA o servidor local seleccionado. Esto no prueba tu clave API ni confirma una conexion.',
+  'ai.settings.allow_connection': 'Permitir acceso al proveedor',
+  'ai.settings.connection_allowed': 'Permiso de acceso concedido',
+  'ai.settings.local_models_download_required':
+    'Activa "Descargar Modelos" arriba para habilitar las descargas del SLM.',
+  'ai.settings.remote_data_consent': 'Enviar datos del libro a este proveedor',
+  'ai.settings.remote_data_consent_desc':
+    'Permite enviar la pregunta, el chat reciente y los fragmentos seleccionados del libro al proveedor elegido.',
+  'ai.settings.share_annotations': 'Enviar tambien mis anotaciones',
+  'ai.settings.share_definitions': 'Enviar tambien mis definiciones guardadas',
+  'ai.settings.auto_repair_citations':
+    'Reintentar automaticamente la reparacion de citas',
+  'ai.error.base_url_required': 'Introduce primero la URL del servidor.',
+  'ai.error.invalid_base_url':
+    'Usa HTTPS para un proveedor compatible o una URL de localhost para IA local.',
+  'ai.error.unsupported_custom_host':
+    'Este proveedor personalizado no esta en la lista de hosts seguros compatibles.',
+  'ai.error.host_permission_required':
+    'Permite la conexion con el proveedor en los ajustes de IA antes de enviar una solicitud.',
+  'ai.error.host_permission_denied': 'No se concedio el permiso de conexion.',
+  'ai.error.remote_consent_required':
+    'Confirma el envio remoto de datos para este proveedor antes de enviar una solicitud.',
+  'ai.error.no_active_book':
+    'Abre un libro antes de usar el asistente de lectura.',
+  'ai.error.index_incompatible':
+    'La configuracion del indice de IA cambio. Vuelve a indexar este libro antes de hacer otra pregunta.',
 } as const

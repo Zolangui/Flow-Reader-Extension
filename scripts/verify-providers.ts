@@ -8,7 +8,7 @@ function baseSettings(): AISettings {
   return {
     provider: 'gemini',
     apiKey: '',
-    model: 'gemini-1.5-flash',
+    model: 'gemini-test-model',
     temperature: 0.3,
     systemPrompt:
       'You are a helpful assistant answering questions about the book.',
@@ -58,7 +58,7 @@ function run() {
       makeSettings({
         provider: 'openai',
         apiKey: 'sk-test',
-        model: 'gpt-4o-mini',
+        model: 'openai-test-model',
         baseUrl: 'http://localhost:11434/v1',
       }),
     )
@@ -75,7 +75,7 @@ function run() {
       makeSettings({
         provider: 'local',
         apiKey: '',
-        model: 'local-model',
+        model: 'local-test-model',
         baseUrl: 'http://localhost:11434/v1',
       }),
     )
@@ -91,13 +91,13 @@ function run() {
       makeSettings({
         provider: 'custom',
         apiKey: 'sk-proxy',
-        model: 'gpt-4o-mini',
-        baseUrl: 'https://proxy.example.com/v1',
+        model: 'openai-test-model',
+        baseUrl: 'https://openrouter.ai/api/v1',
       }),
     )
     assert.equal(
       model?.clientConfig?.baseURL,
-      'https://proxy.example.com/v1',
+      'https://openrouter.ai/api/v1',
       '[custom] must use baseURL',
     )
   }
@@ -108,12 +108,12 @@ function run() {
         makeSettings({
           provider: 'local',
           apiKey: '',
-          model: 'local-model',
+          model: 'local-test-model',
           baseUrl: '',
         }),
       ),
     'local-missing-base-url',
-    'Base URL is required',
+    'I18N_ERR:base_url_required',
   )
 
   expectThrows(
@@ -122,12 +122,12 @@ function run() {
         makeSettings({
           provider: 'custom',
           apiKey: '',
-          model: 'gpt-4o-mini',
-          baseUrl: 'https://proxy.example.com/v1',
+          model: 'openai-test-model',
+          baseUrl: 'https://openrouter.ai/api/v1',
         }),
       ),
     'custom-missing-api-key',
-    'API Key is missing',
+    'I18N_ERR:api_key_missing',
   )
 
   expectThrows(
@@ -136,11 +136,11 @@ function run() {
         makeSettings({
           provider: 'anthropic',
           apiKey: '',
-          model: 'claude-3-5-haiku-latest',
+          model: 'anthropic-test-model',
         }),
       ),
     'anthropic-missing-api-key',
-    'API Key is missing',
+    'I18N_ERR:api_key_missing',
   )
 
   expectThrows(
@@ -149,11 +149,11 @@ function run() {
         makeSettings({
           provider: 'gemini',
           apiKey: '',
-          model: 'gemini-1.5-flash',
+          model: 'gemini-test-model',
         }),
       ),
     'gemini-missing-api-key',
-    'API Key is missing',
+    'I18N_ERR:api_key_missing',
   )
 
   console.log('All provider verification checks passed.')

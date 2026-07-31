@@ -16,6 +16,9 @@ export default {
   'toc.library': '图书馆',
 
   'zen.title': '禅模式',
+  'zen.exit_hint': '禅模式已开启。按 Esc 退出。',
+  'zen.exit_action': '退出禅模式',
+  'zen.dismiss_hint': '关闭提示',
 
   'search.title': '搜索',
   'search.files.result': '{n} 个结果在 {m} 个文件中',
@@ -34,6 +37,15 @@ export default {
   'typography.page_view.single_page': '单页',
   'typography.page_view.double_page': '双页',
   'typography.font_family': '字体',
+  'typography.font_family_hint': '选择标准字体，或加载此设备上安装的字体。',
+  'typography.font_family_load_local': '加载设备字体',
+  'typography.font_family_loading': '正在加载字体...',
+  'typography.font_family_ready': '设备字体已加载',
+  'typography.font_family_unsupported':
+    '此浏览器无法列出设备字体。你仍可手动输入字体名称。',
+  'typography.font_family_failed': '无法加载设备字体。你仍可手动输入字体名称。',
+  'typography.font_family_custom': '自定义字体名称',
+  'typography.font_family_custom_placeholder': '输入已安装的字体名称',
   'typography.font_size': '字号',
   'typography.font_weight': '字重',
   'typography.line_height': '行高',
@@ -56,7 +68,8 @@ export default {
   'settings.color_scheme.light': '浅色',
   'settings.color_scheme.dark': '深色',
   'settings.synchronization.title': '同步',
-  'settings.synchronization.synchronization_desc': '连接到云服务以同步您的图书馆。',
+  'settings.synchronization.synchronization_desc':
+    '连接到云服务以同步您的图书馆。',
   'settings.synchronization.authorize': '授权',
   'settings.synchronization.unauthorize': '取消授权',
   'settings.synchronization.service': '服务',
@@ -225,6 +238,7 @@ export default {
   'ai.reindex_success': '书籍重新索引成功。',
   'ai.reindex_error': '重新索引书籍失败。',
   'ai.index.no_book': '没有可索引的活动书籍。',
+  'ai.index.file_missing': '此书文件在本地不可用。',
   'ai.index.success': '书籍索引成功！AI 现在可以回答有关其内容的问题。',
   'ai.index.failed': '索引失败：{error}',
   'ai.confirm_reset':
@@ -246,13 +260,15 @@ export default {
   'ai.settings.model_category.fast': '快速 / 高效',
   'ai.settings.model_category.other': '其他',
   'ai.settings.model_hint.gemini':
-    '性能首选：gemini-1.5-pro。速度首选：gemini-1.5-flash。',
-  'ai.settings.model_hint.openai': '性能首选：gpt-4o。速度首选：gpt-4o-mini。',
-  'ai.settings.model_hint.anthropic': '强烈推荐：claude-3-5-sonnet-latest。',
+    '请选择当前账户可用的 Gemini 模型。输入 API 密钥后可刷新列表。',
+  'ai.settings.model_hint.openai':
+    '请选择当前账户可用的 OpenAI 模型。输入 API 密钥后可刷新列表。',
+  'ai.settings.model_hint.anthropic':
+    '请选择当前账户可用的 Anthropic 模型。输入 API 密钥后可刷新列表。',
   'ai.settings.model_hint.local':
-    '连接到 Ollama 或 LM Studio 等本地推理服务器。数据不会离开您的机器。',
+    '请输入本地服务器公开的模型 ID，或在支持时刷新列表。',
   'ai.settings.model_hint.custom':
-    '连接到任何 OpenAI 兼容的 API 代理或专用端点（例如 OpenRouter、Anyscale）。',
+    '请输入此端点支持的模型 ID。兼容服务器可刷新列表。',
   'ai.settings.claude_series': 'Claude 系列',
   'ai.settings.api_key_placeholder': '在此粘贴您的密钥...',
   'ai.settings.proxy_api_key': '代理 API 密钥（可选）',
@@ -311,6 +327,7 @@ export default {
   'ai.error.rate_limit': '超出速率限制（{reason}）。请放慢速度。',
   'ai.error.unsupported_provider': '不支持的提供商。',
   'ai.error.api_key_missing': 'API密钥未配置。',
+  'ai.error.model_required': '请先选择模型再发送请求。',
   'ai.error.generation_failed': 'AI提供商响应生成失败。',
 
   // AI Selection Menu
@@ -336,4 +353,31 @@ export default {
   'ai.status.preload_timeout': '预加载超时（请重试）',
   'ai.status.click_to_download': '点击下载',
   'ai.status.not_indexed': '未索引',
+  'ai.settings.api_key_session_only':
+    '您的 API 密钥只在当前浏览器会话中保留，会话结束后会清除。',
+  'ai.settings.connection_permission_desc':
+    '允许浏览器访问选定的 AI 提供商或本地服务器。这不会验证 API 密钥或测试连接。',
+  'ai.settings.allow_connection': '允许访问提供商',
+  'ai.settings.connection_allowed': '已授予提供商访问权限',
+  'ai.settings.local_models_download_required':
+    '\u8bf7\u542f\u7528\u4e0a\u65b9\u7684\u201c\u4e0b\u8f7d\u6a21\u578b\u201d\u4ee5\u5141\u8bb8\u4e0b\u8f7d SLM\u3002',
+  'ai.settings.remote_data_consent': '向此提供商发送图书数据',
+  'ai.settings.remote_data_consent_desc':
+    '允许将问题、最近聊天和选中的图书摘录发送给选定的提供商。',
+  'ai.settings.share_annotations': '同时发送我的注释',
+  'ai.settings.share_definitions': '同时发送我保存的定义',
+  'ai.settings.auto_repair_citations': '自动重试引用修复',
+  'ai.error.base_url_required': '请先输入服务器 URL。',
+  'ai.error.invalid_base_url':
+    '对于受支持的提供商请使用 HTTPS，对于本地 AI 请使用 localhost URL。',
+  'ai.error.unsupported_custom_host':
+    '此自定义提供商不在受支持的安全主机列表中。',
+  'ai.error.host_permission_required':
+    '请在发送请求前先在 AI 设置中允许提供商连接。',
+  'ai.error.host_permission_denied': '未授予连接权限。',
+  'ai.error.remote_consent_required':
+    '请在发送请求前确认向此提供商进行远程数据共享。',
+  'ai.error.no_active_book': '请先打开一本书再使用阅读助手。',
+  'ai.error.index_incompatible':
+    'AI 索引设置已更改。请在提出下一个问题前重新索引该书。',
 } as const

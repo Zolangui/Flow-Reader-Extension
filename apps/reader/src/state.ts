@@ -178,14 +178,18 @@ export function useChatbotState() {
   return useRecoilState(chatbotState)
 }
 
-import { AISettings, AIProvider } from './lib/ai/config'
+import {
+  AISettings,
+  AIProvider,
+  LOCAL_MODEL_CONSENT_VERSION,
+} from './lib/ai/config'
 
 export { type AISettings, type AIProvider }
 
 export const defaultAIConfig: AISettings = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-1.5-flash',
+  model: '',
   temperature: 0.3,
   systemPrompt:
     'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',
@@ -197,13 +201,67 @@ export const defaultAIConfig: AISettings = {
   summarizeSelection: true,
   answerDepth: 'balanced',
   aiScope: 'book_only',
-  downloadLocalModels: true,
+  downloadLocalModels: false,
+  localModelConsentVersion: 0,
+  remoteDataConsent: false,
+  remoteDataConsentProvider: '',
+  includeAnnotationsInRemotePrompts: false,
+  includeDefinitionsInRemotePrompts: false,
+  autoRepairCitations: false,
+}
+
+/**
+ * API keys are intentionally session-only. Browser localStorage is not
+ * encrypted, so a BYOK credential must never be persisted there.
+ */
+function aiSettingsStorageEffect(): AtomEffect<AISettings> {
+  return ({ setSelf, onSet }) => {
+    if (IS_SERVER) return
+
+    const key = 'aiSettings'
+    const persist = (value: AISettings) => {
+      const stored = { ...value } as Partial<AISettings>
+      delete stored.apiKey
+      localStorage.setItem(key, JSON.stringify(stored))
+    }
+
+    try {
+      const raw = localStorage.getItem(key)
+      const parsed = raw ? JSON.parse(raw) : {}
+      const hasLocalModelConsent =
+        parsed?.localModelConsentVersion === LOCAL_MODEL_CONSENT_VERSION &&
+        parsed?.downloadLocalModels === true
+      const safeSettings: AISettings = {
+        ...defaultAIConfig,
+        ...(parsed && typeof parsed === 'object' ? parsed : {}),
+        apiKey: '',
+        downloadLocalModels: hasLocalModelConsent,
+        localModelConsentVersion: hasLocalModelConsent
+          ? LOCAL_MODEL_CONSENT_VERSION
+          : 0,
+      }
+
+      // This rewrites settings from older releases and removes any legacy key.
+      persist(safeSettings)
+      setSelf(safeSettings)
+    } catch {
+      setSelf(defaultAIConfig)
+    }
+
+    onSet((newValue, _, isReset) => {
+      if (isReset) {
+        localStorage.removeItem(key)
+        return
+      }
+      persist(newValue)
+    })
+  }
 }
 
 export const aiSettingsState = atom<AISettings>({
   key: 'aiSettings',
   default: defaultAIConfig,
-  effects: [localStorageEffect('aiSettings', defaultAIConfig)],
+  effects: [aiSettingsStorageEffect()],
 })
 
 export function useAISettings() {

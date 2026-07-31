@@ -26,6 +26,18 @@ export default {
   'typography.page_view.single_page': 'Page unique',
   'typography.page_view.double_page': 'Double page',
   'typography.font_family': 'Police',
+  'typography.font_family_hint':
+    'Choisissez une police standard ou chargez les polices installées sur cet appareil.',
+  'typography.font_family_load_local': 'Charger les polices de cet appareil',
+  'typography.font_family_loading': 'Chargement des polices...',
+  'typography.font_family_ready': 'Polices de cet appareil chargées',
+  'typography.font_family_unsupported':
+    'Ce navigateur ne peut pas afficher les polices de cet appareil. Vous pouvez tout de même saisir un nom de police.',
+  'typography.font_family_failed':
+    'Impossible de charger les polices de cet appareil. Vous pouvez tout de même saisir un nom de police.',
+  'typography.font_family_custom': 'Famille de police personnalisée',
+  'typography.font_family_custom_placeholder':
+    'Saisissez un nom de police installée',
   'typography.font_size': 'Taille de police',
   'typography.font_weight': 'Graisse',
   'typography.line_height': 'Interligne',
@@ -36,6 +48,9 @@ export default {
   'theme.title': 'Thème',
   'audio.title': 'Ambiance',
   'zen.title': 'Mode Zen',
+  'zen.exit_hint': 'Le mode Zen est actif. Appuyez sur Échap pour quitter.',
+  'zen.exit_action': 'Quitter le mode Zen',
+  'zen.dismiss_hint': 'Masquer l’aide',
   'theme.source_color': 'Couleur source',
   'theme.background_color': 'Couleur de fond',
   'settings.title': 'Paramètres',
@@ -198,6 +213,8 @@ export default {
   'ai.reindex_success': 'Livre réindexé avec succès.',
   'ai.reindex_error': 'Échec du réindexage du livre.',
   'ai.index.no_book': 'Aucun livre actif a indexer.',
+  'ai.index.file_missing':
+    'Le fichier de ce livre est indisponible localement.',
   'ai.index.success':
     "Livre indexé avec succès ! L'IA peut maintenant répondre sur son contenu.",
   'ai.index.failed': "Échec de l'indexation : {error}",
@@ -222,14 +239,15 @@ export default {
   'ai.settings.model_category.fast': 'Rapide / efficace',
   'ai.settings.model_category.other': 'Autre',
   'ai.settings.model_hint.gemini':
-    'Meilleur pour la vitesse : gemini-1.5-flash. Meilleur pour la qualité : gemini-1.5-pro.',
+    'Choisissez un modèle Gemini actuellement disponible pour votre compte. Actualisez la liste après avoir ajouté votre clé API.',
   'ai.settings.model_hint.openai':
-    'Meilleur pour la vitesse : gpt-4o-mini. Meilleur pour la qualité : gpt-4o.',
-  'ai.settings.model_hint.anthropic': 'Recommandé : claude-3-5-sonnet-latest.',
+    'Choisissez un modèle OpenAI actuellement disponible pour votre compte. Actualisez la liste après avoir ajouté votre clé API.',
+  'ai.settings.model_hint.anthropic':
+    'Choisissez un modèle Anthropic actuellement disponible pour votre compte. Actualisez la liste après avoir ajouté votre clé API.',
   'ai.settings.model_hint.local':
-    'Connexion à des serveurs locaux comme Ollama ou LM Studio. Aucune donnée ne quitte votre machine.',
+    'Saisissez l identifiant de modèle exposé par votre serveur local ou actualisez la liste si elle est prise en charge.',
   'ai.settings.model_hint.custom':
-    'Connexion à tout proxy compatible OpenAI ou endpoint spécialisé (ex : OpenRouter, Anyscale).',
+    'Saisissez un identifiant de modèle pris en charge par cet endpoint. La liste peut être actualisée pour les serveurs compatibles.',
   'ai.settings.claude_series': 'Série Claude',
   'ai.settings.api_key_placeholder': 'Collez votre clé ici...',
   'ai.settings.proxy_api_key': 'Cle API du proxy (optionnel)',
@@ -289,6 +307,8 @@ export default {
   'ai.error.rate_limit': 'Limite de débit dépassée ({reason}). Ralentissez.',
   'ai.error.unsupported_provider': 'Fournisseur non pris en charge.',
   'ai.error.api_key_missing': "La clé API n'est pas configurée.",
+  'ai.error.model_required':
+    'Choisissez un modèle avant d’envoyer une requête.',
   'ai.error.generation_failed':
     "Échec de génération de réponse depuis le fournisseur d'IA.",
   'ai.selection.explain': 'Expliquer',
@@ -314,4 +334,35 @@ export default {
     "Délai d'initialisation dépassé (cliquez pour réessayer)",
   'ai.status.click_to_download': 'Cliquer pour télécharger',
   'ai.status.not_indexed': 'Non indexé',
+  'ai.settings.api_key_session_only':
+    'Votre cle API est conservee uniquement pendant cette session du navigateur et effacee a sa fermeture.',
+  'ai.settings.connection_permission_desc':
+    'Autorisez le navigateur a acceder au fournisseur d IA ou serveur local selectionne. Cela ne teste pas votre cle API et ne confirme pas une connexion.',
+  'ai.settings.allow_connection': "Autoriser l'acces au fournisseur",
+  'ai.settings.connection_allowed': "Autorisation d'acces accordee",
+  'ai.settings.local_models_download_required':
+    'Activez "T\u00e9l\u00e9charger les Mod\u00e8les" ci-dessus pour activer les t\u00e9l\u00e9chargements du SLM.',
+  'ai.settings.remote_data_consent':
+    'Envoyer les donnees du livre a ce fournisseur',
+  'ai.settings.remote_data_consent_desc':
+    'Autorise l envoi de la question, du chat recent et des extraits selectionnes au fournisseur choisi.',
+  'ai.settings.share_annotations': 'Envoyer aussi mes notes',
+  'ai.settings.share_definitions': 'Envoyer aussi mes definitions enregistrees',
+  'ai.settings.auto_repair_citations':
+    'Reessayer automatiquement la reparation des citations',
+  'ai.error.base_url_required': 'Saisissez d abord l URL du serveur.',
+  'ai.error.invalid_base_url':
+    'Utilisez HTTPS pour un fournisseur compatible ou une URL localhost pour une IA locale.',
+  'ai.error.unsupported_custom_host':
+    'Ce fournisseur personnalise ne figure pas dans la liste des hotes securises pris en charge.',
+  'ai.error.host_permission_required':
+    'Autorisez la connexion au fournisseur dans les reglages IA avant d envoyer une requete.',
+  'ai.error.host_permission_denied':
+    'L autorisation de connexion n a pas ete accordee.',
+  'ai.error.remote_consent_required':
+    'Confirmez le partage de donnees distant pour ce fournisseur avant d envoyer une requete.',
+  'ai.error.no_active_book':
+    'Ouvrez un livre avant d utiliser l assistant de lecture.',
+  'ai.error.index_incompatible':
+    'Les reglages de l index IA ont change. Reindexez ce livre avant de poser une autre question.',
 } as const

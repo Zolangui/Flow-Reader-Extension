@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.6.4+sha512.da3d715bfd22a9a105e6e8088cfc7826699332ded60c423b14ec613a185f1602206702ff0fe4c438cb15c979081ce4cb02568e364b15174503a63c7a8e2a5f6c",
   "scripts": {
     "build": "turbo run build",
+    "build:reader:release": "cross-env FAST_BUILD=false SKIP_SENTRY=false node scripts/build-reader-release.js",
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "build:ext:chrome": "esno scripts/build-extension.js chrome",
@@ -14,7 +15,10 @@
     "package:chrome": "pnpm build:ext:chrome:prod && cd apps/extension/dist && bestzip ../../Lumen-chrome.zip *",
     "package:firefox": "pnpm build:ext:firefox:prod && cd apps/extension/dist && bestzip ../../Lumen-firefox.zip *",
     "benchmark:rag:report": "node scripts/rag-benchmark-report.mjs",
+    "dev:ai-mock": "node scripts/ai-mock-server.cjs",
+    "verify:ai-mock": "cross-env TS_NODE_PROJECT=scripts/tsconfig.esno.json esno scripts/verify-ai-mock.ts",
     "verify:providers": "cross-env TS_NODE_PROJECT=scripts/tsconfig.esno.json esno scripts/verify-providers.ts",
+    "verify:ai-release": "cross-env TS_NODE_PROJECT=scripts/tsconfig.esno.json esno scripts/verify-ai-release.ts",
     "release": "pnpm -r publish --access public",
     "prepare": "husky install"
   },

@@ -46,9 +46,13 @@ function useSize(
   const [size, setSize] = useState(preferredSize)
   const resize = useCallback(
     (delta: number) => {
-      setSize((size) => size && clamp(size + delta, minSize, maxSize))
+      // A zero-width sidebar must be resizable again. Treating 0 as falsy
+      // permanently trapped a panel after it had been dragged closed.
+      setSize((size) =>
+        clamp((size ?? preferredSize ?? minSize) + delta, minSize, maxSize),
+      )
     },
-    [maxSize, minSize],
+    [maxSize, minSize, preferredSize],
   )
 
   useEffect(() => {

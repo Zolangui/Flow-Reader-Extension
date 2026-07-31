@@ -52,20 +52,22 @@ export function generateHeatmapGrid(heatmapData: { [key: string]: number }): {
     })
   }
 
-  // Generate Month Labels
+  // Label the column that actually contains the first visible day of a month.
   const monthLabels: MonthLabel[] = []
   let lastMonth = -1
 
   for (let week = 0; week < numberOfWeeks; week++) {
-    const weekStart = firstSunday.add(week * 7, 'day')
-    const month = weekStart.month()
+    for (let day = 0; day < 7; day++) {
+      const date = firstSunday.add(week * 7 + day, 'day')
+      if (date.isBefore(startDate) || date.isAfter(today)) continue
 
-    if (month !== lastMonth) {
-      monthLabels.push({
-        month: weekStart.format('MMM').charAt(0), // First letter of month
-        col: week + 1,
-      })
-      lastMonth = month
+      if (date.month() !== lastMonth) {
+        monthLabels.push({
+          month: date.format('MMM'),
+          col: week + 1,
+        })
+        lastMonth = date.month()
+      }
     }
   }
 

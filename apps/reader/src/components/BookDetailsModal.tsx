@@ -95,8 +95,21 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
   const sanitizedDescription = useMemo(() => {
     if (!description) return ''
     return DOMPurify.sanitize(description, {
-      ALLOWED_TAGS: ['p', 'br', 'b', 'i', 'em', 'strong', 'span', 'div', 'ul', 'ol', 'li', 'a'],
-      ALLOWED_ATTR: ['href', 'target', 'rel']
+      ALLOWED_TAGS: [
+        'p',
+        'br',
+        'b',
+        'i',
+        'em',
+        'strong',
+        'span',
+        'div',
+        'ul',
+        'ol',
+        'li',
+        'a',
+      ],
+      ALLOWED_ATTR: ['href', 'target', 'rel'],
     })
   }, [description])
 
@@ -122,9 +135,10 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
           <div
             className="aspect-[2/3] w-48 rounded-lg bg-cover bg-center shadow-2xl transition-transform hover:scale-[1.02] md:w-full"
             style={{
-              backgroundImage: `url("${cover ||
+              backgroundImage: `url("${
+                cover ||
                 `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="gray" fill-opacity="0.1" width="1" height="1"/></svg>`
-                }")`,
+              }")`,
             }}
           />
 
@@ -250,7 +264,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                       </span>
                       <span className="text-text-light dark:text-text-dark text-lg font-medium">
                         {book.pageCount}
-                        {book.pageCountEstimated && '*'}
+                        {book.pageCountEstimated && ' ~'}
                       </span>
                     </div>
                   )}
