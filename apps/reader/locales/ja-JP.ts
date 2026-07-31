@@ -376,6 +376,8 @@ export default {
     '選択した AI プロバイダーまたはローカルサーバーへのブラウザーアクセスを許可します。API キーの確認や接続テストは行いません。',
   'ai.settings.allow_connection': 'プロバイダーへのアクセスを許可',
   'ai.settings.connection_allowed': 'プロバイダーへのアクセスが許可されました',
+  'ai.settings.test_connection': '接続テスト',
+  'ai.settings.connection_verified': '接続を確認しました',
   'ai.settings.local_models_download_required':
     'SLM \u306e\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\u3092\u6709\u52b9\u306b\u3059\u308b\u306b\u306f\u3001\u4e0a\u306e\u300c\u30e2\u30c7\u30eb\u3092\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\u300d\u3092\u30aa\u30f3\u306b\u3057\u3066\u304f\u3060\u3055\u3044\u3002',
   'ai.settings.remote_data_consent': 'このプロバイダーに書籍データを送信',
@@ -392,6 +394,16 @@ export default {
   'ai.error.host_permission_required':
     'リクエストを送信する前に、AI 設定でプロバイダー接続を許可してください。',
   'ai.error.host_permission_denied': '接続許可が与えられませんでした。',
+  'ai.error.connection_test_unauthorized':
+    'API キーが拒否されました。確認してもう一度お試しください。',
+  'ai.error.connection_test_forbidden':
+    'このキーはこのプロバイダーまたはエンドポイントにアクセスできません。',
+  'ai.error.connection_test_incompatible':
+    'プロバイダーは応答しましたが、このエンドポイントはモデル一覧に対応していません。モデル ID は手動で入力できます。',
+  'ai.error.connection_test_unavailable':
+    'プロバイダーに接続できません。URL、ネットワーク、ローカルサーバーが起動中かを確認してください。',
+  'ai.error.connection_test_failed':
+    '接続を確認できませんでした。プロバイダーの設定を確認してもう一度お試しください。',
   'ai.error.remote_consent_required':
     'リクエストを送信する前に、このプロバイダーへのリモートデータ共有を確認してください。',
   'ai.error.no_active_book': '読書アシスタントを使う前に書籍を開いてください。',

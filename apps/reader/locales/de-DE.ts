@@ -337,6 +337,8 @@ export default {
     'Erlaube dem Browser den Zugriff auf den ausgewahlten KI-Anbieter oder lokalen Server. Dies testet weder deinen API-Schlussel noch stellt es eine Verbindung her.',
   'ai.settings.allow_connection': 'Anbieterzugriff erlauben',
   'ai.settings.connection_allowed': 'Anbieterzugriff erlaubt',
+  'ai.settings.test_connection': 'Verbindung testen',
+  'ai.settings.connection_verified': 'Verbindung verifiziert',
   'ai.settings.local_models_download_required':
     'Aktiviere oben "Modelle herunterladen", um SLM-Downloads zu aktivieren.',
   'ai.settings.remote_data_consent': 'Buchdaten an diesen Anbieter senden',
@@ -356,6 +358,16 @@ export default {
     'Erlaube die Verbindung zum Anbieter in den KI-Einstellungen, bevor du eine Anfrage sendest.',
   'ai.error.host_permission_denied':
     'Die Verbindungserlaubnis wurde nicht erteilt.',
+  'ai.error.connection_test_unauthorized':
+    'Der API-Schluessel wurde abgelehnt. Prufe ihn und versuche es erneut.',
+  'ai.error.connection_test_forbidden':
+    'Dieser Schluessel hat keinen Zugriff auf diesen Anbieter oder Endpunkt.',
+  'ai.error.connection_test_incompatible':
+    'Der Anbieter hat geantwortet, aber dieser Endpunkt unterstutzt keine Modellliste. Du kannst eine Modell-ID manuell eingeben.',
+  'ai.error.connection_test_unavailable':
+    'Der Anbieter konnte nicht erreicht werden. Prufe die URL, das Netzwerk und ob der lokale Server lauft.',
+  'ai.error.connection_test_failed':
+    'Die Verbindung konnte nicht verifiziert werden. Prufe die Anbieter-Einstellungen und versuche es erneut.',
   'ai.error.remote_consent_required':
     'Bestatige die Remote-Datenfreigabe fur diesen Anbieter, bevor du eine Anfrage sendest.',
   'ai.error.no_active_book':

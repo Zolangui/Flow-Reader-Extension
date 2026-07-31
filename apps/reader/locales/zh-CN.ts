@@ -359,6 +359,8 @@ export default {
     '允许浏览器访问选定的 AI 提供商或本地服务器。这不会验证 API 密钥或测试连接。',
   'ai.settings.allow_connection': '允许访问提供商',
   'ai.settings.connection_allowed': '已授予提供商访问权限',
+  'ai.settings.test_connection': '测试连接',
+  'ai.settings.connection_verified': '连接已验证',
   'ai.settings.local_models_download_required':
     '\u8bf7\u542f\u7528\u4e0a\u65b9\u7684\u201c\u4e0b\u8f7d\u6a21\u578b\u201d\u4ee5\u5141\u8bb8\u4e0b\u8f7d SLM\u3002',
   'ai.settings.remote_data_consent': '向此提供商发送图书数据',
@@ -375,6 +377,13 @@ export default {
   'ai.error.host_permission_required':
     '请在发送请求前先在 AI 设置中允许提供商连接。',
   'ai.error.host_permission_denied': '未授予连接权限。',
+  'ai.error.connection_test_unauthorized': 'API 密钥被拒绝。请检查后重试。',
+  'ai.error.connection_test_forbidden': '该密钥无权访问此提供商或端点。',
+  'ai.error.connection_test_incompatible':
+    '提供商已响应，但此端点不支持列出模型。您可以手动输入模型 ID。',
+  'ai.error.connection_test_unavailable':
+    '无法连接提供商。请检查 URL、网络以及本地服务器是否正在运行。',
+  'ai.error.connection_test_failed': '无法验证连接。请检查提供商设置后重试。',
   'ai.error.remote_consent_required':
     '请在发送请求前确认向此提供商进行远程数据共享。',
   'ai.error.no_active_book': '请先打开一本书再使用阅读助手。',

@@ -710,6 +710,19 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
   const setNavbar = useSetRecoilState(navbarState)
   const mobile = useMobile()
+  const pageCountLayoutSignature = [
+    typography.contentWidthPercent ?? '',
+    typography.fontFamily ?? '',
+    typography.fontSize ?? '',
+    typography.fontWeight ?? '',
+    typography.lineHeight ?? '',
+    typography.spread ?? '',
+    typography.zoom ?? '',
+  ].join('|')
+
+  useEffect(() => {
+    tab.setPageCountLayoutSignature(pageCountLayoutSignature)
+  }, [pageCountLayoutSignature, tab])
 
   const applyCustomStyle = useCallback(() => {
     const contents = rendition?.getContents()[0]

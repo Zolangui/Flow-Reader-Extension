@@ -131,22 +131,35 @@ async function build() {
         await fs.rename(oldPath, newPath)
         console.log('Renamed _next directory to next_assets.')
 
-        // Update references in HTML files
-        const htmlFiles = (await fs.readdir(distDir)).filter((f) =>
-          f.endsWith('.html'),
-        )
+        // Update every generated text asset, not just HTML. The Webpack runtime
+        // loads dynamic imports (such as the chatbot sidebar) from `/_next/`.
+        // Rewriting only the initial HTML scripts leaves those chunks pointing to
+        // a directory that no longer exists after the rename above.
+        const rewriteNextAssetReferences = async (directory) => {
+          const entries = await fs.readdir(directory, { withFileTypes: true })
 
-        // Process HTML files in parallel
-        await Promise.all(
-          htmlFiles.map(async (file) => {
-            const filePath = path.join(distDir, file)
-            let content = await fs.readFile(filePath, 'utf8')
-            content = content.replace(/_next\//g, 'next_assets/')
-            await fs.writeFile(filePath, content, 'utf8')
-          }),
-        )
+          await Promise.all(
+            entries.map(async (entry) => {
+              const filePath = path.join(directory, entry.name)
 
-        console.log('Updated references in HTML files.')
+              if (entry.isDirectory()) {
+                await rewriteNextAssetReferences(filePath)
+                return
+              }
+
+              if (!/\.(?:html|js|json|css)$/i.test(entry.name)) return
+
+              const content = await fs.readFile(filePath, 'utf8')
+              const rewritten = content.replace(/\/_next\//g, '/next_assets/')
+              if (rewritten !== content) {
+                await fs.writeFile(filePath, rewritten, 'utf8')
+              }
+            }),
+          )
+        }
+
+        await rewriteNextAssetReferences(distDir)
+        console.log('Updated references to renamed Next.js assets.')
       }
 
       // Delete problematic _.html file

@@ -333,6 +333,8 @@ export default {
     'Permite que el navegador acceda al proveedor de IA o servidor local seleccionado. Esto no prueba tu clave API ni confirma una conexion.',
   'ai.settings.allow_connection': 'Permitir acceso al proveedor',
   'ai.settings.connection_allowed': 'Permiso de acceso concedido',
+  'ai.settings.test_connection': 'Probar conexion',
+  'ai.settings.connection_verified': 'Conexion verificada',
   'ai.settings.local_models_download_required':
     'Activa "Descargar Modelos" arriba para habilitar las descargas del SLM.',
   'ai.settings.remote_data_consent': 'Enviar datos del libro a este proveedor',
@@ -350,6 +352,16 @@ export default {
   'ai.error.host_permission_required':
     'Permite la conexion con el proveedor en los ajustes de IA antes de enviar una solicitud.',
   'ai.error.host_permission_denied': 'No se concedio el permiso de conexion.',
+  'ai.error.connection_test_unauthorized':
+    'La clave de API fue rechazada. Compruebala e intentalo de nuevo.',
+  'ai.error.connection_test_forbidden':
+    'Esta clave no tiene acceso a este proveedor o endpoint.',
+  'ai.error.connection_test_incompatible':
+    'El proveedor respondio, pero este endpoint no permite listar modelos. Puedes introducir manualmente el ID del modelo.',
+  'ai.error.connection_test_unavailable':
+    'No se pudo acceder al proveedor. Comprueba la URL, la red y que el servidor local este en ejecucion.',
+  'ai.error.connection_test_failed':
+    'No se pudo verificar la conexion. Comprueba la configuracion del proveedor e intentalo de nuevo.',
   'ai.error.remote_consent_required':
     'Confirma el envio remoto de datos para este proveedor antes de enviar una solicitud.',
   'ai.error.no_active_book':

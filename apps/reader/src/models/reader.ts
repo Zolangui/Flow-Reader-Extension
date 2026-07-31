@@ -9,7 +9,11 @@ import Section from '@flow/epubjs/types/section'
 
 import { AnnotationColor, AnnotationType } from '../annotation'
 import { db } from '../db'
-import type { BookRecord, PageCountLayoutRecord } from '../db'
+import type {
+  BookRecord,
+  PageCountLayoutRecord,
+  PageCountLayoutSample,
+} from '../db'
 import { fileToEpub } from '../file'
 import { defaultStyle } from '../styles'
 
@@ -40,6 +44,53 @@ function compareDefinition(d1: string, d2: string) {
 }
 
 const DEFAULT_CHARS_PER_SCREEN_PAGE = 1800
+const MIN_PAGE_COUNT_SAMPLE_CHARACTERS = 1200
+const MIN_PAGE_COUNT_SAMPLES = 3
+const MAX_PAGE_DENSITY_DEVIATION = 3
+
+function estimatePageCountFromSamples(
+  totalLength: number,
+  samples: Record<string, PageCountLayoutSample> | undefined,
+): number | undefined {
+  const measurements = Object.values(samples ?? {}).filter(
+    (sample) =>
+      Number.isFinite(sample.characters) &&
+      sample.characters >= MIN_PAGE_COUNT_SAMPLE_CHARACTERS &&
+      Number.isFinite(sample.pages) &&
+      sample.pages > 0,
+  )
+
+  if (measurements.length < MIN_PAGE_COUNT_SAMPLES) return
+
+  const densities = measurements
+    .map((sample) => sample.pages / sample.characters)
+    .sort((a, b) => a - b)
+  const middle = Math.floor(densities.length / 2)
+  const medianDensity =
+    densities.length % 2 === 0
+      ? (densities[middle - 1]! + densities[middle]!) / 2
+      : densities[middle]!
+
+  const inliers = measurements.filter((sample) => {
+    const density = sample.pages / sample.characters
+    return (
+      density >= medianDensity / MAX_PAGE_DENSITY_DEVIATION &&
+      density <= medianDensity * MAX_PAGE_DENSITY_DEVIATION
+    )
+  })
+
+  if (inliers.length < MIN_PAGE_COUNT_SAMPLES - 1) return
+
+  const sampleCharacters = inliers.reduce(
+    (sum, sample) => sum + sample.characters,
+    0,
+  )
+  const samplePages = inliers.reduce((sum, sample) => sum + sample.pages, 0)
+
+  if (sampleCharacters <= 0 || samplePages <= 0) return
+
+  return Math.max(1, Math.ceil((totalLength * samplePages) / sampleCharacters))
+}
 
 export interface INavItem extends NavItem, INode {
   subitems?: INavItem[]
@@ -112,6 +163,7 @@ export class BookTab extends BaseTab {
   activeResultID?: string
   rendered = false
   private searchTimer?: NodeJS.Timeout
+  private pageCountLayoutSignature?: string
   searchVersion = 0
 
   get container() {
@@ -272,29 +324,42 @@ export class BookTab extends BaseTab {
     }
   }
 
+  setPageCountLayoutSignature(signature: string) {
+    this.pageCountLayoutSignature = signature
+  }
+
   private getPageLayoutKey(): string | undefined {
-    const contents = this.rendition?.getContents?.()[0]
-    const document = contents?.document
-    const body = document?.body
-    const style = body
-      ? document?.defaultView?.getComputedStyle(body)
-      : undefined
     const container = this.container
 
-    if (!container || !style) return
+    if (!container) return
+
+    const width = Math.round(container.clientWidth)
+    const height = Math.round(container.clientHeight)
+    if (width < 200 || height < 200) return
 
     return [
-      Math.round(container.clientWidth),
-      Math.round(container.clientHeight),
-      style.fontFamily,
-      style.fontSize,
-      style.fontWeight,
-      style.lineHeight,
-      style.columnWidth,
-      style.columnGap,
+      width,
+      height,
+      this.pageCountLayoutSignature ?? 'default',
       (this.rendition as any)?.settings?.flow ?? '',
       (this.rendition as any)?.settings?.spread ?? '',
     ].join('|')
+  }
+
+  private getTextPageCount() {
+    return Math.max(
+      1,
+      Math.ceil(this.totalLength / DEFAULT_CHARS_PER_SCREEN_PAGE),
+    )
+  }
+
+  private getEstimatedPageCount(
+    samples: Record<string, PageCountLayoutSample> | undefined,
+  ) {
+    return (
+      estimatePageCountFromSamples(this.totalLength, samples) ??
+      this.getTextPageCount()
+    )
   }
 
   refreshPageCountEstimate(location = this.location) {
@@ -318,17 +383,18 @@ export class BookTab extends BaseTab {
 
     if (
       !section ||
-      section.length < 300 ||
+      section.length < MIN_PAGE_COUNT_SAMPLE_CHARACTERS ||
       !Number.isFinite(displayedPages) ||
       displayedPages <= 0
     ) {
+      const pageCount = this.getEstimatedPageCount(cached?.samples)
       if (
         cached &&
-        (this.book.pageCount !== cached.pageCount ||
+        (this.book.pageCount !== pageCount ||
           this.book.pageCountLayoutKey !== layoutKey)
       ) {
         this.updateBook({
-          pageCount: cached.pageCount,
+          pageCount,
           pageCountEstimated: true,
           pageCountLayoutKey: layoutKey,
         })
@@ -341,13 +407,14 @@ export class BookTab extends BaseTab {
       existingSample?.characters === section.length &&
       existingSample.pages === displayedPages
     ) {
+      const pageCount = this.getEstimatedPageCount(cached?.samples)
       if (
         cached &&
-        (this.book.pageCount !== cached.pageCount ||
+        (this.book.pageCount !== pageCount ||
           this.book.pageCountLayoutKey !== layoutKey)
       ) {
         this.updateBook({
-          pageCount: cached.pageCount,
+          pageCount,
           pageCountEstimated: true,
           pageCountLayoutKey: layoutKey,
         })
@@ -362,22 +429,7 @@ export class BookTab extends BaseTab {
         pages: displayedPages,
       },
     }
-    const measurements = Object.values(samples)
-    const sampleCharacters = measurements.reduce(
-      (sum, sample) => sum + sample.characters,
-      0,
-    )
-    const samplePages = measurements.reduce(
-      (sum, sample) => sum + sample.pages,
-      0,
-    )
-
-    if (sampleCharacters <= 0 || samplePages <= 0) return
-
-    const pageCount = Math.max(
-      1,
-      Math.ceil((this.totalLength * samplePages) / sampleCharacters),
-    )
+    const pageCount = this.getEstimatedPageCount(samples)
     const pageCountLayouts: Record<string, PageCountLayoutRecord> = {
       ...this.book.pageCountLayouts,
       [layoutKey]: {
@@ -387,20 +439,12 @@ export class BookTab extends BaseTab {
       },
     }
 
-    const updates: Partial<BookRecord> = {
+    this.updateBook({
+      pageCount,
       pageCountEstimated: true,
       pageCountLayoutKey: layoutKey,
       pageCountLayouts,
-    }
-
-    // Keep the count stable while the reader gathers more samples for this
-    // layout. A different font, viewport, or spread is a new layout and may
-    // legitimately have a different page count.
-    if (this.book.pageCountLayoutKey !== layoutKey) {
-      updates.pageCount = pageCount
-    }
-
-    this.updateBook(updates)
+    })
   }
 
   /**
@@ -420,17 +464,15 @@ export class BookTab extends BaseTab {
 
     const useTextEstimate = () => {
       const cachedLayoutKey = this.book.pageCountLayoutKey
-      const cachedPageCount = cachedLayoutKey
-        ? this.book.pageCountLayouts?.[cachedLayoutKey]?.pageCount
+      const cachedSamples = cachedLayoutKey
+        ? this.book.pageCountLayouts?.[cachedLayoutKey]?.samples
         : undefined
-      const pageCount =
-        cachedPageCount ??
-        Math.max(1, Math.ceil(this.totalLength / DEFAULT_CHARS_PER_SCREEN_PAGE))
+      const pageCount = this.getEstimatedPageCount(cachedSamples)
 
       this.updateBook({
         pageCount,
         pageCountEstimated: true,
-        pageCountLayoutKey: cachedPageCount ? cachedLayoutKey : undefined,
+        pageCountLayoutKey: cachedLayoutKey,
       })
     }
 

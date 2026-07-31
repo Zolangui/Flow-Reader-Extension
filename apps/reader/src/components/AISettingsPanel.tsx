@@ -157,6 +157,36 @@ interface ModelCacheEntry {
   groups: SelectGroup[]
 }
 
+type ConnectionTestFailure =
+  | 'configuration'
+  | 'permission'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'incompatible'
+  | 'unavailable'
+  | 'failed'
+
+type ModelFetchResult =
+  | { ok: true }
+  | { ok: false; failure: ConnectionTestFailure }
+
+class ModelFetchError extends Error {
+  constructor(
+    public readonly failure: ConnectionTestFailure,
+    message?: string,
+  ) {
+    super(message)
+    this.name = 'ModelFetchError'
+  }
+}
+
+function getConnectionTestFailure(status: number): ConnectionTestFailure {
+  if (status === 401) return 'unauthorized'
+  if (status === 403) return 'forbidden'
+  if (status === 404 || status === 405) return 'incompatible'
+  return 'failed'
+}
+
 const MODEL_FETCH_CACHE_TTL_MS = 10 * 60 * 1000
 const MODEL_FETCH_CACHE = new Map<string, ModelCacheEntry>()
 
@@ -504,6 +534,11 @@ export const AISettingsPanel: React.FC<{
   const [connectionPermissionStatus, setConnectionPermissionStatus] = useState<
     'checking' | 'idle' | 'granted' | 'denied'
   >('checking')
+  const [connectionTestStatus, setConnectionTestStatus] = useState<
+    'idle' | 'testing' | 'verified' | 'failed'
+  >('idle')
+  const [connectionTestFailure, setConnectionTestFailure] =
+    useState<ConnectionTestFailure | null>(null)
 
   React.useEffect(() => {
     let isCurrent = true
@@ -522,6 +557,11 @@ export const AISettingsPanel: React.FC<{
       isCurrent = false
     }
   }, [settings.provider, settings.baseUrl])
+
+  React.useEffect(() => {
+    setConnectionTestStatus('idle')
+    setConnectionTestFailure(null)
+  }, [settings.apiKey, settings.baseUrl, settings.provider])
 
   const connectionConfigurationError = React.useMemo(() => {
     if (settings.provider === 'local' || settings.provider === 'custom') {
@@ -908,15 +948,25 @@ export const AISettingsPanel: React.FC<{
   }
 
   const fetchModels = React.useCallback(
-    async (options?: { force?: boolean }) => {
+    async (options?: {
+      force?: boolean
+      showError?: boolean
+      verifyGeminiModels?: boolean
+    }): Promise<ModelFetchResult> => {
       const force = options?.force === true
       if (settings.provider !== 'local' && !settings.apiKey) {
-        return alert(t('settings.enter_api_key_first'))
+        if (options?.showError !== false) {
+          alert(t('settings.enter_api_key_first'))
+        }
+        return { ok: false, failure: 'configuration' }
       }
       if (
         !(await hasProviderHostPermission(settings.provider, settings.baseUrl))
       ) {
-        return alert(t('error.host_permission_required'))
+        if (options?.showError !== false) {
+          alert(t('error.host_permission_required'))
+        }
+        return { ok: false, failure: 'permission' }
       }
 
       const cacheKey = buildModelCacheKey(
@@ -930,7 +980,7 @@ export const AISettingsPanel: React.FC<{
           cached && Date.now() - cached.fetchedAt < MODEL_FETCH_CACHE_TTL_MS
         if (isFresh && cached) {
           setAvailableModels(cached.groups)
-          return
+          return { ok: true }
         }
       }
 
@@ -952,7 +1002,12 @@ export const AISettingsPanel: React.FC<{
               signal: abortController.signal,
             },
           )
-          if (!res.ok) throw new Error('Failed to fetch from Google')
+          if (!res.ok) {
+            throw new ModelFetchError(
+              getConnectionTestFailure(res.status),
+              'Failed to fetch from Google',
+            )
+          }
           const data = await res.json()
 
           const blacklist =
@@ -969,7 +1024,7 @@ export const AISettingsPanel: React.FC<{
           // - Auto load: metadata-only (fast, no request storm).
           // - Manual refresh: verify accessibility via countTokens.
           let filtered = candidates
-          if (force) {
+          if (options?.verifyGeminiModels === true) {
             const verificationResults = await Promise.allSettled(
               candidates.map(async (m: any) => {
                 const verifyRes = await fetch(
@@ -996,7 +1051,7 @@ export const AISettingsPanel: React.FC<{
               .filter((m): m is any => m !== null)
           }
 
-          const options = filtered
+          const modelOptions = filtered
             .map((model: any) => {
               const id = model.name.replace('models/', '')
               return { value: id, label: id, icon: <GeminiIcon /> }
@@ -1008,7 +1063,7 @@ export const AISettingsPanel: React.FC<{
           groups = [
             {
               label: t('settings.model_category.other'),
-              options,
+              options: modelOptions,
             },
           ]
         } else if (settings.provider === 'openai') {
@@ -1016,7 +1071,12 @@ export const AISettingsPanel: React.FC<{
             headers: { Authorization: `Bearer ${settings.apiKey}` },
             signal: abortController.signal,
           })
-          if (!res.ok) throw new Error('Failed to fetch from OpenAI')
+          if (!res.ok) {
+            throw new ModelFetchError(
+              getConnectionTestFailure(res.status),
+              'Failed to fetch from OpenAI',
+            )
+          }
           const data = await res.json()
 
           const blacklist =
@@ -1050,7 +1110,12 @@ export const AISettingsPanel: React.FC<{
             },
             signal: abortController.signal,
           })
-          if (!res.ok) throw new Error('Failed to fetch from Anthropic')
+          if (!res.ok) {
+            throw new ModelFetchError(
+              getConnectionTestFailure(res.status),
+              'Failed to fetch from Anthropic',
+            )
+          }
           const data = await res.json()
 
           const options = data.data.map((m: any) => ({
@@ -1072,7 +1137,9 @@ export const AISettingsPanel: React.FC<{
           settings.provider === 'custom'
         ) {
           const baseUrl = settings.baseUrl?.trim().replace(/\/+$/, '')
-          if (!baseUrl) throw new Error('Base URL is required')
+          if (!baseUrl) {
+            throw new ModelFetchError('configuration', 'Base URL is required')
+          }
 
           const res = await fetch(`${baseUrl}/models`, {
             headers: settings.apiKey
@@ -1080,7 +1147,12 @@ export const AISettingsPanel: React.FC<{
               : undefined,
             signal: abortController.signal,
           })
-          if (!res.ok) throw new Error('Failed to fetch compatible models')
+          if (!res.ok) {
+            throw new ModelFetchError(
+              getConnectionTestFailure(res.status),
+              'Failed to fetch compatible models',
+            )
+          }
           const data = await res.json()
           const options = Array.isArray(data?.data)
             ? data.data
@@ -1108,10 +1180,22 @@ export const AISettingsPanel: React.FC<{
           fetchedAt: Date.now(),
           groups,
         })
+        return { ok: true }
       } catch (e) {
-        if ((e as any)?.name === 'AbortError') return
-        alert(t('settings.fetch_models_error'))
+        if ((e as any)?.name === 'AbortError') {
+          return { ok: false, failure: 'failed' }
+        }
+        const failure =
+          e instanceof ModelFetchError
+            ? e.failure
+            : e instanceof TypeError
+            ? 'unavailable'
+            : 'failed'
+        if (options?.showError !== false) {
+          alert(t('settings.fetch_models_error'))
+        }
         console.error('[Model Fetch Error]', sanitizeErrorForLogs(e))
+        return { ok: false, failure }
       } finally {
         if (modelFetchAbortRef.current === abortController) {
           modelFetchAbortRef.current = null
@@ -1123,6 +1207,32 @@ export const AISettingsPanel: React.FC<{
     },
     [settings.apiKey, settings.provider, settings.baseUrl, t],
   )
+
+  const testConnection = async () => {
+    if (connectionConfigurationError) {
+      setConnectionTestStatus('failed')
+      setConnectionTestFailure('configuration')
+      return
+    }
+
+    if (
+      !(await hasProviderHostPermission(settings.provider, settings.baseUrl))
+    ) {
+      setConnectionTestStatus('failed')
+      setConnectionTestFailure('permission')
+      return
+    }
+
+    setConnectionTestStatus('testing')
+    setConnectionTestFailure(null)
+    const result = await fetchModels({ force: true, showError: false })
+    if (result.ok === false) {
+      setConnectionTestStatus('failed')
+      setConnectionTestFailure(result.failure)
+      return
+    }
+    setConnectionTestStatus('verified')
+  }
 
   return (
     <div
@@ -1263,27 +1373,44 @@ export const AISettingsPanel: React.FC<{
               <p className="text-primary/80 text-[11px] leading-relaxed">
                 {t('settings.connection_permission_desc')}
               </p>
-              <button
-                type="button"
-                onClick={() => void requestConnectionPermission()}
-                disabled={
-                  connectionPermissionStatus === 'checking' ||
-                  !isConnectionPermissionReady
-                }
-                className={clsx(
-                  'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70',
-                  connectionPermissionStatus === 'granted'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-primary hover:bg-primary-dark',
-                )}
-              >
-                {connectionPermissionStatus === 'granted' && <MdCheck />}
-                {connectionPermissionStatus === 'checking'
-                  ? t('chatbot.thinking')
-                  : connectionPermissionStatus === 'granted'
-                  ? t('settings.connection_allowed')
-                  : t('settings.allow_connection')}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void requestConnectionPermission()}
+                  disabled={
+                    connectionPermissionStatus === 'checking' ||
+                    !isConnectionPermissionReady
+                  }
+                  className={clsx(
+                    'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70',
+                    connectionPermissionStatus === 'granted'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-primary hover:bg-primary-dark',
+                  )}
+                >
+                  {connectionPermissionStatus === 'granted' && <MdCheck />}
+                  {connectionPermissionStatus === 'checking'
+                    ? t('chatbot.thinking')
+                    : connectionPermissionStatus === 'granted'
+                    ? t('settings.connection_allowed')
+                    : t('settings.allow_connection')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void testConnection()}
+                  disabled={
+                    connectionPermissionStatus !== 'granted' ||
+                    !isConnectionPermissionReady ||
+                    connectionTestStatus === 'testing'
+                  }
+                  className="border-primary text-primary hover:bg-primary/10 flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[10px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {connectionTestStatus === 'verified' && <MdCheck />}
+                  {connectionTestStatus === 'testing'
+                    ? t('chatbot.thinking')
+                    : t('settings.test_connection')}
+                </button>
+              </div>
               {connectionConfigurationError && (
                 <p
                   role="status"
@@ -1307,6 +1434,31 @@ export const AISettingsPanel: React.FC<{
                   className="text-[10px] text-red-600 dark:text-red-300"
                 >
                   {t('error.host_permission_denied')}
+                </p>
+              )}
+              {connectionTestStatus === 'verified' && (
+                <p
+                  role="status"
+                  className="flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+                >
+                  <MdCheck />
+                  {t('settings.connection_verified')}
+                </p>
+              )}
+              {connectionTestStatus === 'failed' && connectionTestFailure && (
+                <p
+                  role="status"
+                  className="text-[10px] text-red-600 dark:text-red-300"
+                >
+                  {connectionTestFailure === 'configuration'
+                    ? t(
+                        `error.${
+                          connectionConfigurationError || 'api_key_missing'
+                        }`,
+                      )
+                    : connectionTestFailure === 'permission'
+                    ? t('error.host_permission_required')
+                    : t(`error.connection_test_${connectionTestFailure}`)}
                 </p>
               )}
             </div>
@@ -1383,7 +1535,12 @@ export const AISettingsPanel: React.FC<{
                   ) &&
                     settings.apiKey)) && (
                   <button
-                    onClick={() => void fetchModels({ force: true })}
+                    onClick={() =>
+                      void fetchModels({
+                        force: true,
+                        verifyGeminiModels: true,
+                      })
+                    }
                     disabled={loadingModels}
                     className="text-primary flex items-center gap-1 text-[10px] font-medium hover:underline disabled:opacity-50"
                   >
@@ -1415,6 +1572,14 @@ export const AISettingsPanel: React.FC<{
                 placeholder={t('settings.select_model_placeholder')}
                 icon={<MdSmartToy />}
               />
+              {connectionTestFailure === 'incompatible' && (
+                <PremiumInput
+                  label={`${t('model')} ID`}
+                  value={settings.model}
+                  onChange={(value) => handleChange('model', value)}
+                  placeholder="provider/model-id"
+                />
+              )}
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <PremiumSelect

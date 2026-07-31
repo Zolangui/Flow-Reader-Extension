@@ -370,6 +370,8 @@ export default {
     'Allow the browser to access the selected AI provider or local server. This does not test your API key or confirm a connection.',
   'ai.settings.allow_connection': 'Allow Provider Access',
   'ai.settings.connection_allowed': 'Provider access allowed',
+  'ai.settings.test_connection': 'Test Connection',
+  'ai.settings.connection_verified': 'Connection verified',
   'ai.settings.local_models_download_required':
     'Enable "Download Models" above to activate SLM downloads.',
   'ai.settings.remote_data_consent': 'Send book data to this provider',
@@ -386,6 +388,16 @@ export default {
   'ai.error.host_permission_required':
     'Allow the provider connection in AI settings before sending a request.',
   'ai.error.host_permission_denied': 'Connection permission was not granted.',
+  'ai.error.connection_test_unauthorized':
+    'The API key was rejected. Check it and try again.',
+  'ai.error.connection_test_forbidden':
+    'This key does not have access to this provider or endpoint.',
+  'ai.error.connection_test_incompatible':
+    'The provider responded, but this endpoint does not support listing models. You can enter a model ID manually.',
+  'ai.error.connection_test_unavailable':
+    'Could not reach the provider. Check the URL, network, and whether the local server is running.',
+  'ai.error.connection_test_failed':
+    'The connection could not be verified. Check the provider settings and try again.',
   'ai.error.remote_consent_required':
     'Confirm remote data sharing for this provider before sending a request.',
   'ai.error.no_active_book': 'Open a book before using the reading assistant.',

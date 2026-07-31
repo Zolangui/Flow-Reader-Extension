@@ -340,6 +340,8 @@ export default {
     'Autorisez le navigateur a acceder au fournisseur d IA ou serveur local selectionne. Cela ne teste pas votre cle API et ne confirme pas une connexion.',
   'ai.settings.allow_connection': "Autoriser l'acces au fournisseur",
   'ai.settings.connection_allowed': "Autorisation d'acces accordee",
+  'ai.settings.test_connection': 'Tester la connexion',
+  'ai.settings.connection_verified': 'Connexion verifiee',
   'ai.settings.local_models_download_required':
     'Activez "T\u00e9l\u00e9charger les Mod\u00e8les" ci-dessus pour activer les t\u00e9l\u00e9chargements du SLM.',
   'ai.settings.remote_data_consent':
@@ -359,6 +361,16 @@ export default {
     'Autorisez la connexion au fournisseur dans les reglages IA avant d envoyer une requete.',
   'ai.error.host_permission_denied':
     'L autorisation de connexion n a pas ete accordee.',
+  'ai.error.connection_test_unauthorized':
+    'La cle API a ete refusee. Verifiez-la et reessayez.',
+  'ai.error.connection_test_forbidden':
+    'Cette cle n a pas acces a ce fournisseur ou point de terminaison.',
+  'ai.error.connection_test_incompatible':
+    'Le fournisseur a repondu, mais ce point de terminaison ne permet pas de lister les modeles. Vous pouvez saisir manuellement un ID de modele.',
+  'ai.error.connection_test_unavailable':
+    'Le fournisseur est inaccessible. Verifiez l URL, le reseau et que le serveur local est en cours d execution.',
+  'ai.error.connection_test_failed':
+    'La connexion n a pas pu etre verifiee. Verifiez les reglages du fournisseur et reessayez.',
   'ai.error.remote_consent_required':
     'Confirmez le partage de donnees distant pour ce fournisseur avant d envoyer une requete.',
   'ai.error.no_active_book':
