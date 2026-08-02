@@ -644,7 +644,9 @@ export class BookTab extends BaseTab {
       this.epub.renderTo(el, {
         width: width || '100%',
         height: height || '100%',
-        allowScriptedContent: true,
+        // EPUB files are user-provided HTML. Keep their iframe sandboxed and
+        // never grant book scripts access to the extension context.
+        allowScriptedContent: false,
       }),
     )
     console.log(this.rendition)

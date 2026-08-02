@@ -62,13 +62,16 @@ async function getModel(): Promise<LidModel> {
       module: '/fastText/models/language-identification/common.mjs',
     })
 
-    const moduleUrl = resolveAssetURL(
-      'fastText/models/language-identification/common.mjs',
+    const modulePath = '/fastText/models/language-identification/common.mjs'
+    debugLog('fetch', { url: resolveAssetURL(modulePath) })
+    // Keep this as a native dynamic import so the public FastText module is not
+    // bundled. The specifier is intentionally static: AMO can verify that it is
+    // packaged with the extension, rather than treating it as executable input.
+    const mod: any = await import(
+      /* webpackIgnore: true */
+      // @ts-ignore This URL is copied from public/ to the extension root.
+      '/fastText/models/language-identification/common.mjs'
     )
-    debugLog('fetch', { url: moduleUrl })
-    // IMPORTANT: keep this as a native dynamic import (not a webpack context module),
-    // otherwise Firefox MV3 can fail to resolve the generated chunk URL.
-    const mod: any = await import(/* webpackIgnore: true */ moduleUrl)
 
     const getLIDModel = mod?.getLIDModel || mod?.getLanguageIdentificationModel
     if (typeof getLIDModel !== 'function') {

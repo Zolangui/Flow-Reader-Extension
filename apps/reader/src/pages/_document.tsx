@@ -32,9 +32,11 @@ function PWA() {
 }
 
 const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID
+const IS_EXTENSION_EXPORT = process.env.NEXT_PUBLIC_IS_EXPORT === 'true'
 
 function GoogleTagManager() {
-  if (!GTM_ID) return null
+  // Published extensions must not load or execute third-party scripts.
+  if (!GTM_ID || IS_EXTENSION_EXPORT) return null
   return (
     // eslint-disable-next-line @next/next/next-script-for-ga
     <script
@@ -70,21 +72,7 @@ const background = {
   dark: '#24292e',
 }
 
-// external import in `_document.tsx` will break fast refresh,
-// so move it to `_document.tsx`
 function PreventFlash() {
-  const setColorScheme = () => {
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const scheme = localStorage.getItem('literal-color-scheme') ?? 'system'
-
-    if (scheme === '"dark"' || (scheme === '"system"' && mql.matches)) {
-      document.documentElement.classList.toggle('dark', true)
-      document
-        .querySelector('#theme-color')
-        ?.setAttribute('content', background.dark)
-    }
-  }
-
   return (
     <>
       <style>{`
@@ -95,14 +83,7 @@ function PreventFlash() {
           background: ${background.dark};
         }
       `}</style>
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `const background=${JSON.stringify(background)}`,
-        }}
-      ></script>
-      <script
-        dangerouslySetInnerHTML={{ __html: `(${setColorScheme})()` }}
-      ></script>
+      <script src="/theme-init.js"></script>
     </>
   )
 }

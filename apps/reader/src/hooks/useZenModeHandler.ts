@@ -63,8 +63,7 @@ export function useZenModeHandler({
     const hasWindowApi =
       typeof chrome !== 'undefined' &&
       chrome.windows &&
-      chrome.windows.getCurrent &&
-      chrome.windows.onBoundsChanged
+      chrome.windows.getCurrent
 
     const handleFullscreenChange = () => {
       // Sync state if user exits fullscreen via ESC or browser UI
@@ -112,18 +111,16 @@ export function useZenModeHandler({
       document.addEventListener('keydown', handleKeyDown)
       if (hasWindowApi) {
         void syncChromeWindowState()
-        chrome.windows.onBoundsChanged.addListener(syncChromeWindowState)
       }
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
+    window.addEventListener('resize', syncChromeWindowState)
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('keydown', handleKeyDown)
-      if (hasWindowApi) {
-        chrome.windows.onBoundsChanged.removeListener(syncChromeWindowState)
-      }
+      window.removeEventListener('resize', syncChromeWindowState)
     }
   }, [isZenMode, listen, setZenMode, toggleZenMode])
 
