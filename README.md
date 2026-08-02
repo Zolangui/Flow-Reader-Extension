@@ -6,7 +6,7 @@
 A private, customizable EPUB reader for Firefox and Chromium browsers.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Firefox 128+](https://img.shields.io/badge/Firefox-128%2B-orange.svg)](apps/extension/manifests/firefox_manifest_v3.json)
+[![Firefox 142+](https://img.shields.io/badge/Firefox-142%2B-orange.svg)](apps/extension/manifests/firefox_manifest_v3.json)
 [![Package manager: pnpm](https://img.shields.io/badge/package%20manager-pnpm-F69220.svg)](https://pnpm.io/)
 
 </div>
@@ -81,7 +81,7 @@ For local development or temporary testing:
 4. Choose `apps/extension/dist/manifest.json`.
 
 The `dist` folder is an unpacked development build. Temporary add-ons are removed
-when Firefox restarts. The current manifest requires Firefox 128 or later.
+when Firefox restarts. The current manifest requires Firefox 142 or later.
 
 ### Chromium browsers
 
@@ -112,16 +112,23 @@ Set-Location apps/extension/dist
 
 ### Prerequisites
 
-- Node.js 18 or later
-- pnpm 10.6.4
+- A supported desktop operating system: Windows 10/11, macOS, or Linux
+- Node.js 18.x (the project requires Node.js 18 or later)
+- Corepack, included with supported Node.js releases
+- pnpm 10.6.4, activated through Corepack below
 - Git
+
+On Windows, install the **Microsoft Visual C++ 2015-2022 Redistributable
+(x64)**. Next.js uses a native SWC binary which requires this runtime.
 
 ### Setup
 
 ```bash
 git clone https://github.com/Zolangui/Lumen-Read.git
 cd Lumen-Read
-pnpm install
+corepack enable
+corepack prepare pnpm@10.6.4 --activate
+pnpm install --frozen-lockfile
 ```
 
 Start the development workspace:
@@ -146,6 +153,30 @@ pnpm build:ext:firefox:prod
 
 Each extension build writes browser-specific files to `apps/extension/dist`.
 Build again for the target browser before loading or packaging it.
+
+### Reproducible Firefox release build (AMO)
+
+This repository is the source archive for the Firefox add-on. It contains the
+TypeScript and React source, manifests, build scripts, and the locked dependency
+graph used to create the submitted package. Generated files such as
+`node_modules`, `.next`, `out`, `dist`, and release ZIP files are not source.
+
+To reproduce the Firefox package from a clean checkout, use the following
+commands from the repository root:
+
+```bash
+corepack enable
+corepack prepare pnpm@10.6.4 --activate
+pnpm install --frozen-lockfile
+pnpm package:firefox
+```
+
+`pnpm package:firefox` runs the production Firefox build and packages its
+contents as `Lumen-firefox.zip` in the repository root. The script invokes all
+required build steps, including type checking, linting, static export, asset
+copying, Firefox manifest selection, and ZIP packaging. This is the archive
+submitted to Firefox Add-ons; do not submit the source archive itself as the
+extension package.
 
 ## Contributing
 
