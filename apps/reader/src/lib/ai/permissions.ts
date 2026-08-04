@@ -14,6 +14,15 @@ const PROVIDER_HOSTS: Partial<Record<AIProvider, string>> = {
   anthropic: 'https://api.anthropic.com/*',
 }
 
+// These hosts are used only when the user explicitly enables downloads for
+// the on-device SLM or embeddings. Keeping them optional avoids showing an AI
+// service in the browser's installation prompt for a reader-only install.
+export const LOCAL_MODEL_HOST_PERMISSIONS = [
+  'https://huggingface.co/*',
+  'https://cdn-lfs.huggingface.co/*',
+  'https://hf.co/*',
+]
+
 type PermissionsApi = {
   contains?: (details: { origins: string[] }) => Promise<boolean>
   request?: (details: { origins: string[] }) => Promise<boolean>
@@ -118,6 +127,21 @@ export function requestProviderHostPermission(
   if (!permissions?.request) return Promise.resolve(true)
   try {
     return permissions.request({ origins: [origin] })
+  } catch {
+    return Promise.resolve(false)
+  }
+}
+
+/**
+ * Request every origin used by the immutable local-model download URLs.
+ * Call this directly from a user gesture; checking first would risk losing
+ * the browser's user-gesture requirement for a permission prompt.
+ */
+export function requestLocalModelHostPermissions(): Promise<boolean> {
+  const permissions = getPermissionsApi()
+  if (!permissions?.request) return Promise.resolve(true)
+  try {
+    return permissions.request({ origins: LOCAL_MODEL_HOST_PERMISSIONS })
   } catch {
     return Promise.resolve(false)
   }

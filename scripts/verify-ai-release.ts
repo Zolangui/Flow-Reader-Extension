@@ -44,6 +44,9 @@ for (const manifestName of [
     'https://api.openai.com/*',
     'https://generativelanguage.googleapis.com/*',
     'https://api.anthropic.com/*',
+    'https://huggingface.co/*',
+    'https://cdn-lfs.huggingface.co/*',
+    'https://hf.co/*',
     'http://localhost/*',
   ]) {
     assert(optionalHosts.includes(host), `${manifestName} is missing ${host}`)

@@ -35,6 +35,7 @@ import {
 } from '../lib/ai/language'
 import {
   hasProviderHostPermission,
+  requestLocalModelHostPermissions,
   requestProviderHostPermission,
   validateProviderBaseUrl,
 } from '../lib/ai/permissions'
@@ -581,7 +582,17 @@ export const AISettingsPanel: React.FC<{
 
   const isConnectionPermissionReady = connectionConfigurationError === null
 
-  const updateLocalModelConsent = (checked: boolean) => {
+  const updateLocalModelConsent = async (checked: boolean) => {
+    if (checked) {
+      // This is an explicit user action. The browser will now ask only users
+      // who opted in to downloading local models for Hugging Face access.
+      const granted = await requestLocalModelHostPermissions()
+      if (!granted) {
+        alert(t('error.host_permission_denied'))
+        return
+      }
+    }
+
     setSettings((prev) => ({
       ...prev,
       downloadLocalModels: checked,
