@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Paint-neutral pseudo rules</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: #f8fafc;
+      }
+      body {
+        padding: 32px;
+        font: 20px/1.6 Georgia, serif;
+      }
+      *::before {
+        box-sizing: border-box;
+      }
+      p::first-line {
+        font-weight: bold;
+      }
+      @media (min-width: 99999px) {
+        p::after {
+          content: 'Inactive';
+          color: #111827;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p id="pseudo-noise-prose">
+      Paint-neutral and inactive pseudo rules must not create imaginary
+      legibility debt.
+    </p>
+  </body>
+</html>

@@ -35,14 +35,16 @@ export const BookCard: React.FC<BookCardProps> = ({
   const t = useTranslation()
   const title = book.metadata?.title || book.name
   const author = book.metadata?.creator || t('books.unknown_author')
-  const percentage =
-    book.percentage !== undefined ? Math.round(book.percentage * 100) : 0
+  const progress = Number.isFinite(book.percentage)
+    ? Math.max(0, Math.min(1, book.percentage!))
+    : 0
+  const percentage = Math.round(progress * 100)
 
   if (viewMode === 'list') {
     return (
       <div
         onClick={onClick}
-        className="bg-surface-light dark:bg-surface-dark hover:border-border-light dark:hover:border-border-dark group grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-4 rounded-lg border border-transparent p-4 transition-colors duration-200 sm:grid-cols-[auto_1fr_120px_auto] [&:not(:has(.book-menu-container:hover))]:hover:bg-black/5 dark:[&:not(:has(.book-menu-container:hover))]:hover:bg-white/5"
+        className="bg-surface-light dark:bg-surface-dark hover:border-border-light dark:hover:border-border-dark group grid min-w-0 cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-transparent p-4 transition-colors duration-200 sm:grid-cols-[auto_minmax(0,1fr)_120px_auto] sm:gap-4 [&:not(:has(.book-menu-container:hover))]:hover:bg-black/5 dark:[&:not(:has(.book-menu-container:hover))]:hover:bg-white/5"
       >
         <div
           className="relative aspect-[2/3] h-[72px] w-12 rounded bg-cover bg-center bg-no-repeat shadow-md"
@@ -61,15 +63,15 @@ export const BookCard: React.FC<BookCardProps> = ({
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <p className="text-text-light dark:text-text-dark truncate text-base font-medium leading-normal">
             {title}
           </p>
-          <p className="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal">
+          <p className="text-subtle-light dark:text-subtle-dark truncate text-sm font-normal leading-normal">
             {author}
           </p>
         </div>
-        <div className="hidden flex-col gap-2 sm:flex">
+        <div className="hidden min-w-0 flex-col gap-2 sm:flex">
           <div className="flex items-center justify-between">
             <p className="text-subtle-light dark:text-subtle-dark text-xs font-medium">
               {t('books.progress')}
@@ -143,11 +145,11 @@ export const BookCard: React.FC<BookCardProps> = ({
         />
       </div>
 
-      <div>
+      <div className="min-w-0">
         <p className="text-text-light dark:text-text-dark truncate text-base font-medium leading-normal">
           {title}
         </p>
-        <p className="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal">
+        <p className="text-subtle-light dark:text-subtle-dark truncate text-sm font-normal leading-normal">
           {author}
         </p>
       </div>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Wide semantic table presentation fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #172033;
+        font: 17px/1.55 Georgia, serif;
+      }
+
+      body {
+        padding: 28px;
+      }
+
+      table {
+        width: 1800px;
+        min-width: 1800px;
+        border-collapse: collapse;
+        break-inside: avoid;
+      }
+
+      caption {
+        padding: 0 0 12px;
+        text-align: left;
+        font-weight: 700;
+      }
+
+      th,
+      td {
+        min-width: 230px;
+        border: 1px solid #94a3b8;
+        padding: 10px 12px;
+        text-align: left;
+      }
+
+      th {
+        background: #e2e8f0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Resultados observados</h1>
+    <p>
+      A publicação traz uma tabela sem contêiner rolável e maior que uma coluna
+      do leitor. As últimas colunas ficam inalcançáveis em paginação horizontal.
+    </p>
+    <table id="wide-results">
+      <caption>Comparação semestral completa</caption>
+      <thead>
+        <tr>
+          <th scope="col">Indicador</th>
+          <th scope="col">Janeiro</th>
+          <th scope="col">Fevereiro</th>
+          <th scope="col">Março</th>
+          <th scope="col">Abril</th>
+          <th scope="col">Maio</th>
+          <th scope="col">Junho</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Leitores ativos</th>
+          <td>1.204</td>
+          <td>1.338</td>
+          <td>1.511</td>
+          <td>1.689</td>
+          <td>1.844</td>
+          <td>2.031</td>
+        </tr>
+        <tr>
+          <th scope="row">Livros concluídos</th>
+          <td>438</td>
+          <td>472</td>
+          <td>510</td>
+          <td>563</td>
+          <td>621</td>
+          <td>704</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>O conteúdo posterior confirma que a ordem de leitura foi preservada.</p>
+  </body>
+</html>

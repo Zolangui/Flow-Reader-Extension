@@ -26,15 +26,13 @@
     "https://api.together.xyz/*",
     "https://api.mistral.ai/*",
     "https://api.deepseek.com/*",
+    "https://huggingface.co/*",
+    "https://cdn-lfs.huggingface.co/*",
+    "https://hf.co/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
-  "host_permissions": [
-    "*://*.dropboxapi.com/*",
-    "https://huggingface.co/*",
-    "https://cdn-lfs.huggingface.co/*",
-    "https://hf.co/*"
-  ],
+  "host_permissions": ["*://*.dropboxapi.com/*"],
   "background": {
     "scripts": ["background.js"]
   },

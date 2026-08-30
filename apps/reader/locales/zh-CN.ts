@@ -82,8 +82,6 @@ export default {
   'menu.copy': '复制',
   'menu.search_in_book': '书内搜索',
   'menu.annotate': '标注',
-  'menu.define': '定义',
-  'menu.undefine': '取消定义',
   'menu.create': '创建',
   'menu.delete': '删除',
   'menu.update': '更新',
@@ -157,15 +155,11 @@ export default {
   'library.filter.finished': '已读完',
 
   // Annotation View
-  'annotation.definitions': '定义',
   'annotation.annotations': '标注',
   'annotation.notes': '笔记',
-  'annotation.definition_label': '定义',
-  'annotation.remove_definition': '删除定义',
   'annotation.note_label': '笔记',
   'annotation.highlight_label': '高亮',
   'annotation.remove_annotation': '删除标注',
-  'annotation.empty_definitions': '选择文本并点击书本图标以添加定义。',
   'annotation.empty_annotations': '高亮文本以添加标注或笔记。',
 
   // TOC View
@@ -174,6 +168,9 @@ export default {
   // Image View
   'image.header': '图片',
   'image.untitled_section': '无标题章节',
+  'image.indexing': '正在扫描图片…',
+  'image.empty': '本书中未找到图片。',
+  'image.index_failed': '无法为图片建立索引。',
 
   // Search View
   'search.header': '搜索',
@@ -189,6 +186,11 @@ export default {
   'timeline.days': '天',
   'timeline.current_book_progress': '当前书籍进度',
   'timeline.pages_read': '已读页数',
+  'timeline.calculating_pages': '正在计算页数…',
+  'timeline.page_total_estimated': '估算总页数',
+  'timeline.page_total_current_layout': '当前屏幕和字体设置下的总页数',
+  'timeline.page_position_estimated_total_current_layout':
+    '当前位置为估算值；总页数基于当前屏幕和字体设置',
   'timeline.avg_speed': '平均速度',
   'timeline.est_finish': '预计完成',
   'timeline.reading_calendar': '阅读日历',
@@ -197,8 +199,20 @@ export default {
 
   // Theme View
   'theme.header': '主题',
-  'theme.source_color_label': '源色',
-  'theme.background_color_label': '背景色',
+  'theme.close': '关闭主题设置',
+  'theme.color_scheme_label': '颜色模式',
+  'theme.scheme_light': '浅色',
+  'theme.scheme_dark': '深色',
+  'theme.scheme_system': '跟随系统',
+  'theme.source_color_label': '强调色',
+  'theme.source_color_help': '更改强调色和带色调的阅读背景。',
+  'theme.apply_source_color': '应用',
+  'theme.background_color_label': '阅读背景',
+  'theme.background_default': '纯白',
+  'theme.background_soft': '柔和',
+  'theme.background_tinted': '色调',
+  'theme.background_deep': '浓色调',
+  'theme.background_color_help': '在阅读器使用浅色模式时应用。',
 
   untitled: '未标题',
 
@@ -367,7 +381,6 @@ export default {
   'ai.settings.remote_data_consent_desc':
     '允许将问题、最近聊天和选中的图书摘录发送给选定的提供商。',
   'ai.settings.share_annotations': '同时发送我的注释',
-  'ai.settings.share_definitions': '同时发送我保存的定义',
   'ai.settings.auto_repair_citations': '自动重试引用修复',
   'ai.error.base_url_required': '请先输入服务器 URL。',
   'ai.error.invalid_base_url':

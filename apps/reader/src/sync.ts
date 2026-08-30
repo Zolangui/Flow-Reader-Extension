@@ -3,8 +3,8 @@ import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
 import { destroyCookie, parseCookies, setCookie } from 'nookies'
 
-import { BookRecord, db } from './db'
-import { readBlob } from './file'
+import { BookRecord, db, mergeIncomingBookRecord } from './db'
+import { readBlob } from './lib/epub-file'
 
 export const mapToToken = {
   dropbox: 'dropbox-refresh-token',
@@ -12,9 +12,17 @@ export const mapToToken = {
 
 export const OAUTH_SUCCESS_MESSAGE = 'oauth_success'
 
-export const dbx = new Dropbox({
-  clientId: process.env.NEXT_PUBLIC_DROPBOX_CLIENT_ID,
-})
+let dropboxClient: Dropbox | undefined
+
+function getDropboxClient(): Dropbox {
+  if (!dropboxClient) {
+    dropboxClient = new Dropbox({
+      clientId: process.env.NEXT_PUBLIC_DROPBOX_CLIENT_ID,
+    })
+    dropboxClient.auth.refreshAccessToken = () => ensureDropboxAccessToken()
+  }
+  return dropboxClient
+}
 
 const DROPBOX_AUTH_URL = 'https://www.dropbox.com/oauth2/authorize'
 const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
@@ -231,23 +239,25 @@ export async function authorizeDropboxWithPkce(): Promise<void> {
   }
 
   const token = await exchangeCodeForToken(code, verifier, redirectUri)
-  const refreshToken =
-    token.refresh_token || (await getDropboxRefreshToken())
+  const refreshToken = token.refresh_token || (await getDropboxRefreshToken())
   if (!refreshToken) {
     throw new Error('Dropbox refresh token missing')
   }
 
   await setDropboxRefreshToken(refreshToken)
-  dbx.auth.setAccessToken(token.access_token)
+  const client = getDropboxClient()
+  client.auth.setAccessToken(token.access_token)
   if (token.expires_in) {
-    dbx.auth.setAccessTokenExpiresAt(new Date(Date.now() + token.expires_in * 1000))
+    client.auth.setAccessTokenExpiresAt(
+      new Date(Date.now() + token.expires_in * 1000),
+    )
   }
 }
 
 export async function authorizeDropboxFallback(): Promise<void> {
   if (!isBrowser()) return
   const redirectUri = window.location.origin + '/api/callback/dropbox'
-  const url = await dbx.auth.getAuthenticationUrl(
+  const url = await getDropboxClient().auth.getAuthenticationUrl(
     redirectUri,
     JSON.stringify({ redirectUri }),
     'code',
@@ -269,8 +279,9 @@ export async function authorizeDropbox(): Promise<void> {
 
 let _refreshReq: Promise<void> | undefined
 export async function ensureDropboxAccessToken(): Promise<void> {
-  const accessToken = dbx.auth.getAccessToken()
-  const expiresAt = dbx.auth.getAccessTokenExpiresAt()
+  const client = getDropboxClient()
+  const accessToken = client.auth.getAccessToken()
+  const expiresAt = client.auth.getAccessTokenExpiresAt()
   const isValid =
     accessToken && (!expiresAt || Date.now() < Number(expiresAt) - 30_000)
   if (isValid) return
@@ -279,9 +290,11 @@ export async function ensureDropboxAccessToken(): Promise<void> {
     const refreshToken = await getDropboxRefreshToken()
     if (!refreshToken) throw new Error('Dropbox not authorized')
     const token = await refreshAccessTokenWithToken(refreshToken)
-    dbx.auth.setAccessToken(token.access_token)
+    client.auth.setAccessToken(token.access_token)
     if (token.expires_in) {
-      dbx.auth.setAccessTokenExpiresAt(new Date(Date.now() + token.expires_in * 1000))
+      client.auth.setAccessTokenExpiresAt(
+        new Date(Date.now() + token.expires_in * 1000),
+      )
     }
   })().finally(() => {
     _refreshReq = undefined
@@ -290,15 +303,13 @@ export async function ensureDropboxAccessToken(): Promise<void> {
   await _refreshReq
 }
 
-dbx.auth.refreshAccessToken = () => ensureDropboxAccessToken()
-
 interface SerializedBooks {
   version: number
-  dbVersion: number
+  dbVersion?: number
   books: BookRecord[]
 }
 
-const VERSION = 1
+const VERSION = 2
 export const DATA_FILENAME = 'data.json'
 
 function serializeData(books?: BookRecord[]) {
@@ -309,25 +320,107 @@ function serializeData(books?: BookRecord[]) {
   })
 }
 
-function deserializeData(text: string) {
-  const { version, dbVersion, books } = JSON.parse(text) as SerializedBooks
+export class UnsupportedSyncDataVersionError extends Error {
+  constructor(version: number) {
+    super(`This Lumen version cannot safely read sync data version ${version}`)
+    this.name = 'UnsupportedSyncDataVersionError'
+  }
+}
+
+function isBookRecordLike(value: unknown): value is BookRecord {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Partial<BookRecord>
+  return (
+    typeof record.id === 'string' &&
+    record.id.length > 0 &&
+    typeof record.name === 'string' &&
+    Array.isArray(record.annotations)
+  )
+}
+
+export function deserializeData(text: string): BookRecord[] {
+  const {
+    version = 1,
+    dbVersion,
+    books = [],
+  } = JSON.parse(text) as Partial<SerializedBooks>
+
+  if (!Number.isInteger(version) || version < 1) {
+    throw new Error('Invalid Lumen sync data version')
+  }
+  if (version > VERSION) {
+    // Preserving an unknown object is not enough: an older client would later
+    // overwrite it with semantics it does not understand. Fail closed and let
+    // the newer client remain the source of truth.
+    throw new UnsupportedSyncDataVersionError(version)
+  }
 
   if (version < VERSION) {
-    // migrate `data.json`
+    // v1 has no canonicalProgress field. It remains valid legacy data; a
+    // missing field simply causes a lazy local canonical migration on open.
   }
-  if (db && dbVersion < db.verno) {
+  if (db && dbVersion !== undefined && dbVersion < db.verno) {
     // migrate `BookRecord`
   }
 
-  return books
+  return Array.isArray(books) ? books.filter(isBookRecordLike) : []
+}
+
+async function mergeIncomingBooks(books: BookRecord[]): Promise<void> {
+  if (!db) return
+
+  await db.transaction('rw', db.books, async () => {
+    for (const incoming of books) {
+      const local = await db.books.get(incoming.id)
+      await db.books.put(mergeIncomingBookRecord(local, incoming))
+    }
+  })
 }
 
 export async function uploadData(books: BookRecord[]) {
-  return dbx.filesUpload({
+  await ensureDropboxAccessToken()
+  return getDropboxClient().filesUpload({
     path: `/${DATA_FILENAME}`,
     mode: { '.tag': 'overwrite' },
     contents: serializeData(books),
   })
+}
+
+let pendingBooksUpload: BookRecord[] | undefined
+let booksUploadDrain: Promise<void> | undefined
+
+function cloneBooksForUpload(books: BookRecord[]): BookRecord[] {
+  // Dropbox receives JSON, so snapshot through the same representation now;
+  // later Valtio/SWR mutations must not alter an already queued payload.
+  return JSON.parse(JSON.stringify(books)) as BookRecord[]
+}
+
+/**
+ * Coalesce full-book snapshots and upload them strictly in order. Fire-and-
+ * forget uploads can otherwise finish B -> A and restore stale progress.
+ */
+export function queueBooksUpload(books: BookRecord[]): Promise<void> {
+  pendingBooksUpload = cloneBooksForUpload(books)
+  if (booksUploadDrain) return booksUploadDrain
+
+  booksUploadDrain = (async () => {
+    while (pendingBooksUpload) {
+      const next = pendingBooksUpload
+      pendingBooksUpload = undefined
+      try {
+        await uploadData(next)
+      } catch (error) {
+        // A later local change will enqueue the latest complete snapshot again.
+        // Avoid an immediate infinite retry loop while still surfacing failure.
+        console.warn('Unable to upload Lumen sync data:', error)
+      }
+    }
+  })().finally(() => {
+    booksUploadDrain = undefined
+    if (pendingBooksUpload) void queueBooksUpload(pendingBooksUpload)
+  })
+
+  return booksUploadDrain
 }
 
 export const dropboxFilesFetcher = async (path: string) => {
@@ -336,7 +429,9 @@ export const dropboxFilesFetcher = async (path: string) => {
   } catch {
     return []
   }
-  return dbx.filesListFolder({ path }).then((d) => d.result.entries)
+  return getDropboxClient()
+    .filesListFolder({ path })
+    .then((d) => d.result.entries)
 }
 
 export const dropboxBooksFetcher = async (path: string) => {
@@ -345,13 +440,18 @@ export const dropboxBooksFetcher = async (path: string) => {
   } catch {
     return []
   }
-  return dbx
+  return getDropboxClient()
     .filesDownload({ path })
     .then((d) => {
       const blob: Blob = (d.result as any).fileBlob
       return readBlob((r) => r.readAsText(blob))
     })
     .then((d) => deserializeData(d))
+}
+
+export async function downloadDropboxFile(path: string) {
+  await ensureDropboxAccessToken()
+  return getDropboxClient().filesDownload({ path })
 }
 
 export async function pack() {
@@ -383,7 +483,7 @@ export async function unpack(file: File) {
 
   const books = deserializeData(await booksJSON.async('text'))
 
-  db?.books.bulkPut(books)
+  await mergeIncomingBooks(books)
 
   const coversText = await coversJSON.async('text')
   db?.covers.bulkPut(JSON.parse(coversText))

@@ -1,7 +1,14 @@
 import { IS_SERVER } from '@literal-ui/hooks'
 import { atom, AtomEffect, useRecoilState } from 'recoil'
 
-import { RenditionSpread } from '@flow/epubjs/types/rendition'
+import { RenditionSpread } from '@flow/epubjs'
+
+import {
+  DEFAULT_AI_SETTINGS,
+  LOCAL_MODEL_CONSENT_VERSION,
+  type AIProvider,
+  type AISettings,
+} from './lib/ai/config'
 
 function localStorageEffect<T>(key: string, defaultValue: T): AtomEffect<T> {
   return ({ setSelf, onSet }) => {
@@ -129,41 +136,27 @@ const defaultChatbotState: ChatbotState = {
   meta: defaultChatbotMeta,
 }
 
-function chatbotStorageEffect(
-  key: string,
-  defaultValue: ChatbotState,
-): AtomEffect<ChatbotState> {
+function chatbotUiStorageEffect(key: string): AtomEffect<ChatbotState> {
   return ({ setSelf, onSet }) => {
     if (IS_SERVER) return
 
     const savedValue = localStorage.getItem(key)
-    if (savedValue === null) {
-      localStorage.setItem(key, JSON.stringify(defaultValue))
-      setSelf(defaultValue)
-    } else {
+    if (savedValue !== null) {
       try {
-        const parsed = JSON.parse(savedValue) as Partial<ChatbotState>
-        const merged: ChatbotState = {
-          ...defaultValue,
-          ...parsed,
-          meta: {
-            ...defaultValue.meta,
-            ...(parsed.meta || {}),
-          },
-          messages: Array.isArray(parsed.messages)
-            ? (parsed.messages as any)
-            : defaultValue.messages,
-        }
-        setSelf(merged)
+        const parsed = JSON.parse(savedValue) as { isOpen?: unknown }
+        setSelf({
+          ...defaultChatbotState,
+          isOpen: parsed.isOpen === true,
+        })
       } catch {
-        setSelf(defaultValue)
+        localStorage.removeItem(key)
       }
     }
 
     onSet((newValue, _, isReset) => {
       isReset
         ? localStorage.removeItem(key)
-        : localStorage.setItem(key, JSON.stringify(newValue))
+        : localStorage.setItem(key, JSON.stringify({ isOpen: newValue.isOpen }))
     })
   }
 }
@@ -171,44 +164,16 @@ function chatbotStorageEffect(
 export const chatbotState = atom<ChatbotState>({
   key: 'chatbot',
   default: defaultChatbotState,
-  effects: [chatbotStorageEffect('chatbot', defaultChatbotState)],
+  effects: [chatbotUiStorageEffect('chatbot')],
 })
 
 export function useChatbotState() {
   return useRecoilState(chatbotState)
 }
 
-import {
-  AISettings,
-  AIProvider,
-  LOCAL_MODEL_CONSENT_VERSION,
-} from './lib/ai/config'
-
 export { type AISettings, type AIProvider }
 
-export const defaultAIConfig: AISettings = {
-  provider: 'gemini',
-  apiKey: '',
-  model: '',
-  temperature: 0.3,
-  systemPrompt:
-    'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',
-  baseUrl: '',
-  autoPersona: false,
-  insightTriggers: false,
-  deepThink: false,
-  explainSelection: true,
-  summarizeSelection: true,
-  answerDepth: 'balanced',
-  aiScope: 'book_only',
-  downloadLocalModels: false,
-  localModelConsentVersion: 0,
-  remoteDataConsent: false,
-  remoteDataConsentProvider: '',
-  includeAnnotationsInRemotePrompts: false,
-  includeDefinitionsInRemotePrompts: false,
-  autoRepairCitations: false,
-}
+export const defaultAIConfig: AISettings = DEFAULT_AI_SETTINGS
 
 /**
  * API keys are intentionally session-only. Browser localStorage is not
@@ -228,12 +193,17 @@ function aiSettingsStorageEffect(): AtomEffect<AISettings> {
     try {
       const raw = localStorage.getItem(key)
       const parsed = raw ? JSON.parse(raw) : {}
+      const {
+        includeDefinitionsInRemotePrompts: _deprecatedDefinitionSharing,
+        ...storedSettings
+      } = parsed && typeof parsed === 'object' ? parsed : {}
       const hasLocalModelConsent =
-        parsed?.localModelConsentVersion === LOCAL_MODEL_CONSENT_VERSION &&
-        parsed?.downloadLocalModels === true
+        storedSettings.localModelConsentVersion ===
+          LOCAL_MODEL_CONSENT_VERSION &&
+        storedSettings.downloadLocalModels === true
       const safeSettings: AISettings = {
         ...defaultAIConfig,
-        ...(parsed && typeof parsed === 'object' ? parsed : {}),
+        ...storedSettings,
         apiKey: '',
         downloadLocalModels: hasLocalModelConsent,
         localModelConsentVersion: hasLocalModelConsent

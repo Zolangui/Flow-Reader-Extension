@@ -1,18 +1,42 @@
 import { type AIProvider } from './config'
 
-const SUPPORTED_CUSTOM_HOSTS = new Set([
-  'openrouter.ai',
-  'api.groq.com',
-  'api.together.xyz',
-  'api.mistral.ai',
-  'api.deepseek.com',
-])
-
 const PROVIDER_HOSTS: Partial<Record<AIProvider, string>> = {
   openai: 'https://api.openai.com/*',
   gemini: 'https://generativelanguage.googleapis.com/*',
   anthropic: 'https://api.anthropic.com/*',
 }
+
+export const CUSTOM_PROVIDER_HOST_PERMISSIONS = [
+  'https://openrouter.ai/*',
+  'https://api.groq.com/*',
+  'https://api.together.xyz/*',
+  'https://api.mistral.ai/*',
+  'https://api.deepseek.com/*',
+]
+
+export const LOOPBACK_HOST_PERMISSIONS = [
+  'http://localhost/*',
+  'http://127.0.0.1/*',
+]
+
+export const CLOUD_PROVIDER_HOST_PERMISSIONS = Object.values(PROVIDER_HOSTS)
+  .filter((value): value is string => Boolean(value))
+  .concat(CUSTOM_PROVIDER_HOST_PERMISSIONS)
+
+const SUPPORTED_CUSTOM_HOSTS = new Set(
+  CUSTOM_PROVIDER_HOST_PERMISSIONS.map((permission) =>
+    new URL(permission.replace('*', '')).hostname.toLowerCase(),
+  ),
+)
+
+// These hosts are used only when the user explicitly enables downloads for
+// the on-device SLM or embeddings. Keeping them optional avoids showing an AI
+// service in the browser's installation prompt for a reader-only install.
+export const LOCAL_MODEL_HOST_PERMISSIONS = [
+  'https://huggingface.co/*',
+  'https://cdn-lfs.huggingface.co/*',
+  'https://hf.co/*',
+]
 
 type PermissionsApi = {
   contains?: (details: { origins: string[] }) => Promise<boolean>
@@ -118,6 +142,21 @@ export function requestProviderHostPermission(
   if (!permissions?.request) return Promise.resolve(true)
   try {
     return permissions.request({ origins: [origin] })
+  } catch {
+    return Promise.resolve(false)
+  }
+}
+
+/**
+ * Request every origin used by the immutable local-model download URLs.
+ * Call this directly from a user gesture; checking first would risk losing
+ * the browser's user-gesture requirement for a permission prompt.
+ */
+export function requestLocalModelHostPermissions(): Promise<boolean> {
+  const permissions = getPermissionsApi()
+  if (!permissions?.request) return Promise.resolve(true)
+  try {
+    return permissions.request({ origins: LOCAL_MODEL_HOST_PERMISSIONS })
   } catch {
     return Promise.resolve(false)
   }

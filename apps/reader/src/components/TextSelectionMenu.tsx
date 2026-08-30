@@ -4,9 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import FocusLock from 'react-focus-lock'
 import {
   MdCopyAll,
-  MdOutlineAddBox,
   MdOutlineEdit,
-  MdOutlineIndeterminateCheckBox,
   MdSearch,
   MdAutoAwesome,
   MdAutoStories,
@@ -35,6 +33,20 @@ import { layout, LayoutAnchorMode, LayoutAnchorPosition } from './base'
 interface TextSelectionMenuProps {
   tab: BookTab
 }
+
+function currentSelectionRange(
+  selection: Selection | undefined,
+): Range | undefined {
+  if (!selection || selection.rangeCount < 1) return undefined
+  // Selection is live and can be cleared by an iframe page change between
+  // React's render and this read. Firefox throws IndexSizeError in that race.
+  try {
+    return selection.getRangeAt(0)
+  } catch {
+    return undefined
+  }
+}
+
 export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({
   tab,
 }) => {
@@ -54,16 +66,17 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({
 
   // it is possible that both `selection` and `tab.annotationRange`
   // are set when select end within an annotation
-  const range = selection?.getRangeAt(0) ?? annotationRange
+  const selectedRange = currentSelectionRange(selection)
+  const range = selectedRange ?? annotationRange
   if (!range) return null
 
   // prefer to display above the selection to avoid text selection helpers
   // https://stackoverflow.com/questions/68081757/hide-the-two-text-selection-helpers-in-mobile-browsers
   const forward = isTouchScreen
     ? false
-    : selection
-      ? isForwardSelection(selection)
-      : true
+    : selection && selectedRange
+    ? isForwardSelection(selection)
+    : true
 
   const rects = [...range.getClientRects()].filter((r) => Math.round(r.width))
   const anchorRect = rects && (forward ? last(rects) : rects[0])
@@ -231,28 +244,6 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
                 setAnnotate(true)
               }}
             />
-            {tab.isDefined(text) ? (
-              <IconButton
-                title={t('undefine')}
-                Icon={MdOutlineIndeterminateCheckBox}
-                size={ICON_SIZE}
-                onClick={() => {
-                  hide()
-                  tab.undefine(text)
-                }}
-              />
-            ) : (
-              <IconButton
-                title={t('define')}
-                Icon={MdOutlineAddBox}
-                size={ICON_SIZE}
-                onClick={() => {
-                  hide()
-                  tab.define([text])
-                }}
-              />
-            )}
-
             {/* AI ACTIONS - Integrated v3.11 */}
             {/* AI ACTIONS - Integrated v3.11 */}
             {settings.explainSelection && (
@@ -260,7 +251,7 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
                 title={tAI('selection.explain_tooltip')}
                 Icon={MdAutoAwesome}
                 size={ICON_SIZE}
-                className="text-primary hover:scale-110 active:scale-95 transition-all !p-1 bg-primary/5 rounded-lg border border-primary/20 shadow-sm shadow-primary/10"
+                className="text-primary bg-primary/5 border-primary/20 shadow-primary/10 rounded-lg border !p-1 shadow-sm transition-all hover:scale-110 active:scale-95"
                 onClick={() => {
                   hide()
                   sendMessage(text, undefined, { action: 'explain' })
@@ -273,7 +264,7 @@ const TextSelectionMenuRenderer: React.FC<TextSelectionMenuRendererProps> = ({
                 title={tAI('selection.summarize_tooltip')}
                 Icon={MdAutoStories}
                 size={ICON_SIZE}
-                className="text-primary hover:scale-110 active:scale-95 transition-all !p-1 bg-primary/5 rounded-lg border border-primary/20 shadow-sm shadow-primary/10"
+                className="text-primary bg-primary/5 border-primary/20 shadow-primary/10 rounded-lg border !p-1 shadow-sm transition-all hover:scale-110 active:scale-95"
                 onClick={() => {
                   hide()
                   sendMessage(text, undefined, { action: 'summarize' })

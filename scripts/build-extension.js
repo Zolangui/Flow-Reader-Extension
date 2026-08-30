@@ -99,6 +99,31 @@ async function removeLegacyPolyfills(directory) {
   return removedFiles
 }
 
+async function verifyManifestResources(directory) {
+  const manifest = await fs.readJson(path.join(directory, 'manifest.json'))
+  const declared = Array.isArray(manifest.web_accessible_resources)
+    ? manifest.web_accessible_resources.flatMap((entry) =>
+        typeof entry === 'string'
+          ? [entry]
+          : Array.isArray(entry?.resources)
+          ? entry.resources
+          : [],
+      )
+    : []
+  const missing = []
+  for (const resource of declared) {
+    if (resource.includes('*')) continue
+    if (!(await fs.pathExists(path.join(directory, resource)))) {
+      missing.push(resource)
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Manifest declares missing packaged resources: ${missing.join(', ')}`,
+    )
+  }
+}
+
 async function build() {
   try {
     const startTime = Date.now()
@@ -118,9 +143,8 @@ async function build() {
         env: { ...process.env },
       })
     } catch (e) {
-      console.warn(
-        'Warning: failed to generate wllama worker assets:',
-        e?.message || e,
+      throw new Error(
+        `Failed to generate required local-AI assets: ${e?.message || e}`,
       )
     }
 
@@ -264,6 +288,8 @@ async function build() {
         console.log('Deleted _.html file.')
       }
     }
+
+    await verifyManifestResources(distDir)
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2)
     console.log(

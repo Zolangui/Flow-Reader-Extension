@@ -18,11 +18,6 @@ export const AnnotationView: React.FC<PaneViewProps> = () => {
     [focusedBookTab?.book.annotations],
   )
 
-  const definitions = useMemo(
-    () => focusedBookTab?.book.definitions ?? [],
-    [focusedBookTab?.book.definitions],
-  )
-
   // Sort annotations by date (newest first)
   const sortedAnnotations = useMemo(() => {
     return [...annotations].sort((a, b) => b.createAt - a.createAt)
@@ -49,29 +44,6 @@ export const AnnotationView: React.FC<PaneViewProps> = () => {
         </div>
 
         <div className="no-scrollbar flex-1 overflow-y-auto p-4">
-          {/* Definitions Section */}
-          <div className="mb-8">
-            <div className="mb-3 flex items-center justify-between px-1">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                {t('definitions')}
-              </h3>
-            </div>
-
-            {definitions.length > 0 ? (
-              <div className="space-y-3">
-                {definitions.map((def) => (
-                  <DefinitionCard key={def} text={def} />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border-2 border-dashed border-gray-100 p-4 text-center dark:border-gray-800">
-                <p className="text-xs italic text-gray-400">
-                  {t('empty_definitions')}
-                </p>
-              </div>
-            )}
-          </div>
-
           {/* Annotations Section */}
           <div>
             <div className="mb-3 flex items-center justify-between px-1">
@@ -95,56 +67,6 @@ export const AnnotationView: React.FC<PaneViewProps> = () => {
             )}
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-const DefinitionCard: React.FC<{ text: string }> = ({ text }) => {
-  const t = useTranslation('annotation')
-  return (
-    <div className="group relative mb-2 flex cursor-pointer items-start gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm transition-all hover:shadow-md dark:border-gray-800 dark:bg-gray-800/50">
-      {/* Icon Left */}
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-        <span className="material-symbols-outlined text-lg">menu_book</span>
-      </div>
-
-      {/* Content Right */}
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 opacity-80 dark:text-gray-400">
-            {t('definition_label')}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              reader.focusedBookTab?.undefine(text)
-            }}
-            className="opacity-0 transition-opacity group-hover:opacity-100"
-            title={t('remove_definition')}
-          >
-            <span className="material-symbols-outlined text-base text-gray-400 hover:text-red-500">
-              close
-            </span>
-          </button>
-        </div>
-
-        <p
-          className="py-1 font-serif text-xs italic text-gray-600 dark:text-gray-300"
-          style={{
-            display: '-webkit-box',
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            lineHeight: '1.6',
-            maxHeight: '4.8em', // 3 lines × 1.6 line-height = 4.8em
-            wordWrap: 'break-word',
-            textOverflow: 'ellipsis',
-          }}
-          title={text}
-        >
-          &quot;{text}&quot;
-        </p>
       </div>
     </div>
   )

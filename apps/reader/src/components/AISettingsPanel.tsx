@@ -35,6 +35,7 @@ import {
 } from '../lib/ai/language'
 import {
   hasProviderHostPermission,
+  requestLocalModelHostPermissions,
   requestProviderHostPermission,
   validateProviderBaseUrl,
 } from '../lib/ai/permissions'
@@ -581,7 +582,17 @@ export const AISettingsPanel: React.FC<{
 
   const isConnectionPermissionReady = connectionConfigurationError === null
 
-  const updateLocalModelConsent = (checked: boolean) => {
+  const updateLocalModelConsent = async (checked: boolean) => {
+    if (checked) {
+      // This is an explicit user action. The browser will now ask only users
+      // who opted in to downloading local models for Hugging Face access.
+      const granted = await requestLocalModelHostPermissions()
+      if (!granted) {
+        alert(t('error.host_permission_denied'))
+        return
+      }
+    }
+
     setSettings((prev) => ({
       ...prev,
       downloadLocalModels: checked,
@@ -596,9 +607,6 @@ export const AISettingsPanel: React.FC<{
       remoteDataConsentProvider: checked ? prev.provider : '',
       includeAnnotationsInRemotePrompts: checked
         ? prev.includeAnnotationsInRemotePrompts
-        : false,
-      includeDefinitionsInRemotePrompts: checked
-        ? prev.includeDefinitionsInRemotePrompts
         : false,
       autoRepairCitations: checked ? prev.autoRepairCitations : false,
     }))
@@ -836,7 +844,6 @@ export const AISettingsPanel: React.FC<{
         next.remoteDataConsent = false
         next.remoteDataConsentProvider = ''
         next.includeAnnotationsInRemotePrompts = false
-        next.includeDefinitionsInRemotePrompts = false
         next.autoRepairCitations = false
       }
 
@@ -1490,20 +1497,6 @@ export const AISettingsPanel: React.FC<{
                       if (settings.remoteDataConsent) {
                         handleChange(
                           'includeAnnotationsInRemotePrompts',
-                          checked,
-                        )
-                      }
-                    }}
-                  />
-                </label>
-                <label className="text-subtle flex items-center justify-between gap-3 text-[10px]">
-                  <span>{t('settings.share_definitions')}</span>
-                  <Switch
-                    checked={settings.includeDefinitionsInRemotePrompts}
-                    onChange={(checked) => {
-                      if (settings.remoteDataConsent) {
-                        handleChange(
-                          'includeDefinitionsInRemotePrompts',
                           checked,
                         )
                       }

@@ -86,8 +86,6 @@ export default {
   'menu.copy': 'Copiar',
   'menu.search_in_book': 'Buscar no livro',
   'menu.annotate': 'Anotar',
-  'menu.define': 'Definir',
-  'menu.undefine': 'Remover Definição',
   'menu.create': 'Criar',
   'menu.delete': 'Excluir',
   'menu.update': 'Atualizar',
@@ -161,16 +159,11 @@ export default {
   'library.filter.finished': 'Concluídos',
 
   // Annotation View
-  'annotation.definitions': 'Definições',
   'annotation.annotations': 'Anotações',
   'annotation.notes': 'Notas',
-  'annotation.definition_label': 'Definição',
-  'annotation.remove_definition': 'Remover definição',
   'annotation.note_label': 'Nota',
   'annotation.highlight_label': 'Destaque',
   'annotation.remove_annotation': 'Remover anotação',
-  'annotation.empty_definitions':
-    'Selecione um texto e clique no ícone do livro para adicionar definições.',
   'annotation.empty_annotations':
     'Destaque um texto para adicionar anotações ou notas.',
 
@@ -180,6 +173,9 @@ export default {
   // Image View
   'image.header': 'Imagens',
   'image.untitled_section': 'Seção Sem Título',
+  'image.indexing': 'Procurando imagens…',
+  'image.empty': 'Nenhuma imagem encontrada neste livro.',
+  'image.index_failed': 'Não foi possível indexar as imagens.',
 
   // Search View
   'search.header': 'Busca',
@@ -195,6 +191,11 @@ export default {
   'timeline.days': 'Dias',
   'timeline.current_book_progress': 'Progresso do Livro Atual',
   'timeline.pages_read': 'Páginas Lidas',
+  'timeline.calculating_pages': 'Calculando páginas…',
+  'timeline.page_total_estimated': 'Total estimado',
+  'timeline.page_total_current_layout': 'Total para esta tela e tipografia',
+  'timeline.page_position_estimated_total_current_layout':
+    'Posição estimada; total para esta tela e tipografia',
   'timeline.avg_speed': 'Vel. Média',
   'timeline.est_finish': 'Termina em',
   'timeline.reading_calendar': 'Calendário de Leitura',
@@ -203,8 +204,20 @@ export default {
 
   // Theme View
   'theme.header': 'Tema',
-  'theme.source_color_label': 'Cor de Origem',
-  'theme.background_color_label': 'Cor de Fundo',
+  'theme.close': 'Fechar configurações de tema',
+  'theme.color_scheme_label': 'Esquema de cores',
+  'theme.scheme_light': 'Claro',
+  'theme.scheme_dark': 'Escuro',
+  'theme.scheme_system': 'Sistema',
+  'theme.source_color_label': 'Cor de destaque',
+  'theme.source_color_help': 'Altera os destaques e fundos de leitura tonais.',
+  'theme.apply_source_color': 'Aplicar',
+  'theme.background_color_label': 'Fundo de leitura',
+  'theme.background_default': 'Branco puro',
+  'theme.background_soft': 'Suave',
+  'theme.background_tinted': 'Tonalizado',
+  'theme.background_deep': 'Tom intenso',
+  'theme.background_color_help': 'Usado quando o leitor está no modo claro.',
 
   untitled: 'Sem título',
 
@@ -390,7 +403,6 @@ export default {
   'ai.settings.remote_data_consent_desc':
     'Permite enviar a pergunta, o chat recente e trechos selecionados do livro ao provedor selecionado.',
   'ai.settings.share_annotations': 'Enviar tambem minhas anotacoes',
-  'ai.settings.share_definitions': 'Enviar tambem minhas definicoes salvas',
   'ai.settings.auto_repair_citations':
     'Tentar novamente o reparo de citacoes automaticamente',
   'ai.error.base_url_required': 'Informe primeiro a URL do servidor.',

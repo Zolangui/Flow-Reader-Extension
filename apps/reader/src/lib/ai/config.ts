@@ -12,12 +12,19 @@ export const AI_CONFIG = {
     query: 'query: ',
     document: 'passage: ',
   },
-  embeddingDimFirefox: 768, // Aligned with multilingual-e5-base default output dim
+  // Keep native dimensions explicit. The local E5 Large model produces 1024
+  // values, while Firefox trial.ml currently uses E5 Base with 768 values.
+  // The index dimension remains 768 for compatibility with existing indexes.
+  // Changing it requires an explicit index migration and backend/model keying.
+  embeddingModelFirefoxNative: 'Xenova/multilingual-e5-base',
+  embeddingDimFirefoxLocal: 1024,
+  embeddingDimFirefoxNative: 768,
+  embeddingIndexDimFirefox: 768,
   embeddingDim: 384, // Truncation target (set < model dim only if MRL-capable)
   chunkSize: 1000,
   chunkOverlap: 200,
   vectorStoreName: 'lumen-vectors',
-  ragVersion: 3.1, // v3.10 introduces UX Hardening (Depth/Scope)
+  ragVersion: '3.11',
 }
 
 export type AIProvider = 'openai' | 'gemini' | 'anthropic' | 'local' | 'custom'
@@ -49,7 +56,6 @@ export interface AISettings {
   remoteDataConsent: boolean
   remoteDataConsentProvider: AIProvider | ''
   includeAnnotationsInRemotePrompts: boolean
-  includeDefinitionsInRemotePrompts: boolean
   autoRepairCitations: boolean
 }
 
@@ -57,9 +63,10 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'gemini',
   apiKey: '',
   model: '',
-  temperature: 0.7,
+  temperature: 0.3,
   systemPrompt:
     'You are a helpful assistant answering questions about the book. Use the provided context to answer accurately.',
+  baseUrl: '',
   autoPersona: false,
   insightTriggers: false,
   deepThink: false,
@@ -72,6 +79,5 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   remoteDataConsent: false,
   remoteDataConsentProvider: '',
   includeAnnotationsInRemotePrompts: false,
-  includeDefinitionsInRemotePrompts: false,
   autoRepairCitations: false,
 }

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Occluded prose experiment</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: #f8fafc;
+        font: 18px/1.5 Georgia, serif;
+      }
+      body {
+        padding: 24px;
+      }
+      #occlusion-stage {
+        position: relative;
+        width: 360px;
+        height: 120px;
+      }
+      #occluded-prose,
+      #occluding-cover {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        padding: 16px;
+      }
+      #occluding-cover {
+        z-index: 2;
+        background: #111827;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="occlusion-stage">
+      <p id="occluded-prose">
+        Readable paint hidden behind an authored sibling.
+      </p>
+      <div id="occluding-cover" aria-hidden="true"></div>
+    </div>
+  </body>
+</html>

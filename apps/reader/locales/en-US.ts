@@ -84,8 +84,6 @@ export default {
   'menu.copy': 'Copy',
   'menu.search_in_book': 'Search in book',
   'menu.annotate': 'Annotate',
-  'menu.define': 'Define',
-  'menu.undefine': 'Undefine',
   'menu.create': 'Create',
   'menu.delete': 'Delete',
   'menu.update': 'Update',
@@ -159,16 +157,11 @@ export default {
   'details.unknown_author': 'Unknown Author',
 
   // Annotation View
-  'annotation.definitions': 'Definitions',
   'annotation.annotations': 'Annotations',
   'annotation.notes': 'Notes',
-  'annotation.definition_label': 'Definition',
-  'annotation.remove_definition': 'Remove definition',
   'annotation.note_label': 'Note',
   'annotation.highlight_label': 'Highlight',
   'annotation.remove_annotation': 'Remove annotation',
-  'annotation.empty_definitions':
-    'Select text and click the book icon to add definitions.',
   'annotation.empty_annotations': 'Highlight text to add annotations or notes.',
 
   // TOC View
@@ -177,6 +170,9 @@ export default {
   // Image View
   'image.header': 'Images',
   'image.untitled_section': 'Untitled Section',
+  'image.indexing': 'Scanning images…',
+  'image.empty': 'No images found in this book.',
+  'image.index_failed': 'Images could not be indexed.',
 
   // Search View
   'search.header': 'Search',
@@ -192,6 +188,11 @@ export default {
   'timeline.days': 'Days',
   'timeline.current_book_progress': 'Current Book Progress',
   'timeline.pages_read': 'Pages Read',
+  'timeline.calculating_pages': 'Calculating pages…',
+  'timeline.page_total_estimated': 'Estimated total',
+  'timeline.page_total_current_layout': 'Total for this screen and typography',
+  'timeline.page_position_estimated_total_current_layout':
+    'Estimated position; total for this screen and typography',
   'timeline.avg_speed': 'Avg. Speed',
   'timeline.est_finish': 'Est. Finish',
   'timeline.reading_calendar': 'Reading Calendar',
@@ -200,8 +201,20 @@ export default {
 
   // Theme View
   'theme.header': 'Theme',
-  'theme.source_color_label': 'Source Color',
-  'theme.background_color_label': 'Background Color',
+  'theme.close': 'Close theme settings',
+  'theme.color_scheme_label': 'Color scheme',
+  'theme.scheme_light': 'Light',
+  'theme.scheme_dark': 'Dark',
+  'theme.scheme_system': 'System',
+  'theme.source_color_label': 'Accent color',
+  'theme.source_color_help': 'Changes accents and tonal reading backgrounds.',
+  'theme.apply_source_color': 'Apply',
+  'theme.background_color_label': 'Reading background',
+  'theme.background_default': 'Pure white',
+  'theme.background_soft': 'Soft',
+  'theme.background_tinted': 'Tinted',
+  'theme.background_deep': 'Deep tint',
+  'theme.background_color_help': 'Used when the reader is in light mode.',
 
   untitled: 'Untitled',
 
@@ -378,7 +391,6 @@ export default {
   'ai.settings.remote_data_consent_desc':
     'Allows the question, recent chat, and selected book excerpts to be sent to the selected provider.',
   'ai.settings.share_annotations': 'Also send my notes',
-  'ai.settings.share_definitions': 'Also send my saved definitions',
   'ai.settings.auto_repair_citations': 'Automatically retry citation repair',
   'ai.error.base_url_required': 'Enter a server URL first.',
   'ai.error.invalid_base_url':

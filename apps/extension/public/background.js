@@ -123,13 +123,21 @@ function toFloat32(v) {
   return new Float32Array(0) // Should probably be error, but safe fallback
 }
 
+function requireEmbeddingModelId(modelId) {
+  const value = String(modelId || '').trim()
+  if (!value) {
+    throw new Error('Missing embedding modelId')
+  }
+  return value
+}
+
 // Embed text using feature-extraction task
 async function embedText(text, { modelId } = {}) {
+  const resolvedModelId = requireEmbeddingModelId(modelId)
   await ensureEngine({
     taskName: 'feature-extraction',
     modelHub: 'huggingface',
-    // Default to a known-working model from allowed orgs (Mozilla/Xenova)
-    modelId: modelId || 'Xenova/multilingual-e5-base',
+    modelId: resolvedModelId,
   })
 
   // Use runEngine (NOT engine.run)
@@ -147,10 +155,11 @@ async function embedText(text, { modelId } = {}) {
  * Uses native array support if available, otherwise falls back to loop.
  */
 async function embedBatch(texts, { modelId, batchId = '?' } = {}) {
+  const resolvedModelId = requireEmbeddingModelId(modelId)
   const stats = summarizeTexts(texts)
   const startedAt = nowMs()
   console.log(`[Background][Batch#${batchId}] start`, {
-    modelId: modelId || 'Xenova/multilingual-e5-base',
+    modelId: resolvedModelId,
     ...stats,
   })
 
@@ -158,7 +167,7 @@ async function embedBatch(texts, { modelId, batchId = '?' } = {}) {
   await ensureEngine({
     taskName: 'feature-extraction',
     modelHub: 'huggingface',
-    modelId: modelId || 'Xenova/multilingual-e5-base',
+    modelId: resolvedModelId,
   })
   const ensureMs = Math.round(nowMs() - ensureStartedAt)
 

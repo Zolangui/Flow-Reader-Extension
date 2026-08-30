@@ -11,10 +11,11 @@ const ENABLE_WLLAMA_WORKER_OVERRIDE_FALLBACK = false
 type Backend = 'transformers' | 'wllama' | 'webgpu' | 'firefox-native'
 
 // Xenova/all-MiniLM-L6-v2 produces 384-dim sentence embeddings.
-// Note: multilingual-e5-base produces 768-dim; large produces 1024-dim.
+// Keep backend-native dimensions separate from the stable index dimension.
 const ONNX_DIM = 384
-const E5_LARGE_DIM = 1024
-const FIREFOX_ML_MODEL_ID = 'Xenova/multilingual-e5-base' // Default model ID for Native ML delegation
+const E5_LARGE_DIM = AI_CONFIG.embeddingDimFirefoxLocal
+const FIREFOX_NATIVE_DIM = AI_CONFIG.embeddingDimFirefoxNative
+const FIREFOX_ML_MODEL_ID = AI_CONFIG.embeddingModelFirefoxNative
 const FIREFOX_DELEGATE_MAX_BATCH_SIZE = 24
 const FIREFOX_DELEGATE_MIN_BATCH_SIZE = 8
 const FIREFOX_DELEGATE_MAX_BATCH_CHARS = 9500
@@ -38,7 +39,7 @@ const SEMANTIC_MERGE_MAX_CHARS = 2500
 
 // EXPERIMENTAL: WebGPU model for 15-30x faster embeddings (Firefox 147+)
 // Keep WebGPU path aligned with Firefox Native ML default model family.
-const WEBGPU_EMBED_MODEL = 'Xenova/multilingual-e5-base'
+const WEBGPU_EMBED_MODEL = AI_CONFIG.embeddingModelFirefoxNative
 
 const yieldToWorker = () =>
   new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -1780,10 +1781,10 @@ async function initialize(payload: {
               probe?.data instanceof Float32Array
                 ? probe.data
                 : new Float32Array(probe?.data || [])
-            embedDim = probeData.length || E5_LARGE_DIM
+            embedDim = probeData.length || FIREFOX_NATIVE_DIM
             console.log('[RAG WORKER] âœ… WebGPU embedDim probed:', embedDim)
           } catch {
-            embedDim = E5_LARGE_DIM
+            embedDim = FIREFOX_NATIVE_DIM
             console.log(
               '[RAG WORKER] âš ï¸ WebGPU dim probe failed, using default:',
               embedDim,
@@ -1834,14 +1835,14 @@ async function initialize(payload: {
             } else if (probeData?.data) {
               embedDim = probeData.data.length
             } else {
-              embedDim = E5_LARGE_DIM
+              embedDim = FIREFOX_NATIVE_DIM
             }
             console.log(
               '[RAG WORKER] âœ… Firefox Native ML embedDim probed:',
               embedDim,
             )
           } catch {
-            embedDim = E5_LARGE_DIM
+            embedDim = FIREFOX_NATIVE_DIM
             console.log(
               '[RAG WORKER] âš ï¸ Firefox Native ML dim probe failed, using default:',
               embedDim,

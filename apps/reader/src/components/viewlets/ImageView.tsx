@@ -1,9 +1,12 @@
 import clsx from 'clsx'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useAction, useTranslation } from '@flow/reader/hooks'
 import {
-  ISection,
+  resolvePublicationImageDisplaySource,
+  type SectionImageReference,
+} from '@flow/reader/lib/image-index'
+import {
   ISectionSnapshot,
   reader,
   useReaderSnapshot,
@@ -16,6 +19,10 @@ export const ImageView: React.FC<PaneViewProps> = () => {
   const [, setAction] = useAction()
   const t = useTranslation()
 
+  useEffect(() => {
+    void reader.focusedBookTab?.ensureImageIndex()
+  }, [focusedBookTab?.instanceId, focusedBookTab?.sections])
+
   const sections = useMemo(() => {
     if (!focusedBookTab?.sections) return []
     // Cast to any to avoid "Type instantiation is excessively deep" error with Valtio proxies
@@ -25,7 +32,7 @@ export const ImageView: React.FC<PaneViewProps> = () => {
     return allSections.filter((s) => s.images && s.images.length > 0)
   }, [focusedBookTab?.sections])
 
-  if ((sections?.length ?? 0) > 500) return null
+  const indexState = focusedBookTab?.imageIndexState ?? 'idle'
 
   return (
     <div className="h-full w-full overflow-hidden bg-white dark:bg-gray-900">
@@ -45,9 +52,27 @@ export const ImageView: React.FC<PaneViewProps> = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {indexState === 'indexing' && (
+            <div className="mb-4 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <span className="material-symbols-outlined animate-spin text-lg">
+                progress_activity
+              </span>
+              <span>{t('image.indexing')}</span>
+            </div>
+          )}
+          {indexState === 'ready' && sections.length === 0 && (
+            <div className="flex h-full items-center justify-center text-center text-sm text-gray-500 dark:text-gray-400">
+              {t('image.empty')}
+            </div>
+          )}
+          {indexState === 'failed' && sections.length === 0 && (
+            <div className="flex h-full items-center justify-center text-center text-sm text-red-600 dark:text-red-400">
+              {t('image.index_failed')}
+            </div>
+          )}
           <div className="space-y-2">
             {sections?.map((s) => (
-              <Block key={s.href} section={s} />
+              <Block key={`${s.index}:${s.href}`} section={s} />
             ))}
           </div>
         </div>
@@ -68,9 +93,8 @@ const Block: React.FC<BlockProps> = ({ section }) => {
   const resources = focusedBookTab?.epub?.resources
   if (!resources) return null
 
-  const blobs = resources.replacementUrls
-  const assets = resources.assets
-  const imageCount = section.images.length
+  const images = section.images ?? []
+  const imageCount = images.length
 
   return (
     <div>
@@ -113,43 +137,85 @@ const Block: React.FC<BlockProps> = ({ section }) => {
 
       {expanded && (
         <div className="pl-8 pt-3">
-          {section.images.map((src) => {
-            const i = assets.findIndex((a: any) => src.includes(a.href))
-            const asset = assets[i]
-            const blob = blobs[i]
-
-            if (!blob) return null
+          {images.map((image) => {
             return (
-              <div key={i} className="mb-4 flex justify-center">
-                <img
-                  className="h-auto max-w-full cursor-pointer rounded-md border border-gray-200 object-contain shadow-md transition-shadow hover:shadow-lg dark:border-gray-700"
-                  src={blob}
-                  alt={asset.href}
-                  onClick={() => {
-                    const bookSections = reader.focusedBookTab?.sections
-                    if (!bookSections) return
-
-                    // Cast to ISection[] because displayFromSelector needs the full object with methods, not just the snapshot
-                    const sectionsArray = Array.from(
-                      bookSections as any,
-                    ) as ISection[]
-                    const realSection = sectionsArray.find(
-                      (s) => s.href === section.href,
-                    )
-                    if (realSection) {
-                      const filename = src.split('/').pop()
-                      reader.focusedBookTab?.displayFromSelector(
-                        `img[src*="${filename}"]`,
-                        realSection,
-                      )
-                    }
-                  }}
-                />
-              </div>
+              <ImageTile
+                key={`${image.cfi}:${image.resourceHref ?? image.source}`}
+                image={image}
+                bookInstanceId={focusedBookTab?.instanceId ?? ''}
+              />
             )
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+const ImageTile: React.FC<{
+  image: SectionImageReference
+  bookInstanceId: string
+}> = ({ image, bookInstanceId }) => {
+  const [source, setSource] = useState<string | undefined>(() =>
+    image.source.startsWith('data:image/') ? image.source : undefined,
+  )
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let current = true
+    const tab = reader.focusedBookTab
+    const epub = tab?.epub
+    setSource(image.source.startsWith('data:image/') ? image.source : undefined)
+    setFailed(false)
+    if (!epub || tab.instanceId !== bookInstanceId) {
+      setFailed(true)
+      return () => {
+        current = false
+      }
+    }
+
+    void resolvePublicationImageDisplaySource(image, epub.resources, (href) =>
+      epub.resolve(href, false),
+    ).then((resolved) => {
+      if (!current) return
+      setSource(resolved)
+      setFailed(!resolved)
+    })
+
+    return () => {
+      current = false
+    }
+  }, [bookInstanceId, image])
+
+  if (!source) {
+    return (
+      <div className="mb-4 flex min-h-[3rem] items-center justify-center rounded-md border border-gray-200 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+        {failed ? (
+          image.alt ?? image.resourceHref ?? image.source
+        ) : (
+          <span className="material-symbols-outlined animate-spin text-lg">
+            progress_activity
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-4 flex justify-center">
+      <img
+        className="h-auto max-w-full cursor-pointer rounded-md border border-gray-200 object-contain shadow-md transition-shadow hover:shadow-lg dark:border-gray-700"
+        src={source}
+        alt={image.alt ?? image.resourceHref ?? ''}
+        onError={() => {
+          setSource(undefined)
+          setFailed(true)
+        }}
+        onClick={() => {
+          const tab = reader.focusedBookTab
+          if (tab?.instanceId === bookInstanceId) tab.display(image.cfi)
+        }}
+      />
     </div>
   )
 }

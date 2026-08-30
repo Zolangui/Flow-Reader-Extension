@@ -88,7 +88,15 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
   const subject = book.metadata?.subject
   const identifier = book.metadata?.identifier
   const language = book.metadata?.language
-  const percentage = Math.round((book.percentage || 0) * 100)
+  const progress = Number.isFinite(book.percentage)
+    ? Math.max(0, Math.min(1, book.percentage!))
+    : 0
+  const percentage = Math.round(progress * 100)
+  // A layout-atlas total was historically stored on BookRecord. It is tied to
+  // the old device's viewport and typography, so it must not be presented as
+  // an exact total until the local Atlas cache has been rebuilt.
+  const pageCountIsEstimated =
+    book.pageCountEstimated || book.pageCountSource === 'layout-atlas'
   const sizeMb = (book.size / (1024 * 1024)).toFixed(2)
 
   // Security: Sanitize HTML description from ePub to prevent XSS
@@ -178,12 +186,14 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
         </div>
 
         {/* Right Column: Details */}
-        <div className="flex flex-1 flex-col overflow-y-auto p-8 md:p-10">
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-8 md:p-10">
           <div className="mb-8">
-            <h2 className="text-text-light dark:text-text-dark mb-2 text-3xl font-bold leading-tight tracking-tight md:text-4xl">
+            <h2 className="text-text-light dark:text-text-dark mb-2 break-words text-3xl font-bold leading-tight tracking-tight md:text-4xl">
               {title}
             </h2>
-            <p className="text-primary text-xl font-medium">{author}</p>
+            <p className="text-primary break-words text-xl font-medium">
+              {author}
+            </p>
           </div>
 
           <div className="mb-10 grid gap-8 md:grid-cols-2">
@@ -198,7 +208,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                     <span className="text-subtle-light dark:text-subtle-dark block text-xs uppercase tracking-wider">
                       {t('details.publisher')}
                     </span>
-                    <span className="text-text-light dark:text-text-dark font-medium">
+                    <span className="text-text-light dark:text-text-dark break-words font-medium">
                       {publisher}
                     </span>
                   </div>
@@ -218,7 +228,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                     <span className="text-subtle-light dark:text-subtle-dark block text-xs uppercase tracking-wider">
                       {t('details.genre')}
                     </span>
-                    <span className="text-text-light dark:text-text-dark font-medium">
+                    <span className="text-text-light dark:text-text-dark break-words font-medium">
                       {Array.isArray(subject) ? subject.join(', ') : subject}
                     </span>
                   </div>
@@ -264,7 +274,7 @@ export const BookDetailsModal: React.FC<BookDetailsModalProps> = ({
                       </span>
                       <span className="text-text-light dark:text-text-dark text-lg font-medium">
                         {book.pageCount}
-                        {book.pageCountEstimated && ' ~'}
+                        {pageCountIsEstimated && ' ~'}
                       </span>
                     </div>
                   )}

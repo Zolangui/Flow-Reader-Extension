@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">urn:lumen:fixture:pink-callout:v1</dc:identifier>
+    <dc:title>Lumen pink callout fixture</dc:title>
+    <dc:language>pt-BR</dc:language>
+    <meta property="dcterms:modified">2026-08-13T00:00:00Z</meta>
+    <meta property="rendition:layout">reflowable</meta>
+    <meta property="rendition:spread">none</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
+    <item id="pink" href="pink.xhtml" media-type="application/xhtml+xml" />
+    <item id="wide-table" href="wide-table.xhtml" media-type="application/xhtml+xml" />
+    <item id="author-theme" href="author-theme.xhtml" media-type="application/xhtml+xml" />
+    <item id="author-theme-css" href="author-theme-palettes.css" media-type="text/css" />
+    <item id="dark-foreground" href="dark-foreground.xhtml" media-type="application/xhtml+xml" />
+    <item id="default-foreground" href="default-foreground.xhtml" media-type="application/xhtml+xml" />
+    <!-- Generated at request time by scripts/presentation-browser-fixture.mjs. -->
+    <item id="large-index" href="large-index.xhtml" media-type="application/xhtml+xml" />
+    <item id="pseudo-noise" href="pseudo-noise.xhtml" media-type="application/xhtml+xml" />
+    <item id="pseudo-dropcap" href="pseudo-dropcap.xhtml" media-type="application/xhtml+xml" />
+    <item id="forged-location-ignore" href="forged-location-ignore.xhtml" media-type="application/xhtml+xml" />
+    <item id="many-color-roots" href="many-color-roots.xhtml" media-type="application/xhtml+xml" />
+    <item id="clipped-prose" href="clipped-prose.xhtml" media-type="application/xhtml+xml" />
+    <item id="occluded-callout" href="occluded-callout.xhtml" media-type="application/xhtml+xml" />
+    <item id="lazy-image-section" href="lazy-image-section.xhtml" media-type="application/xhtml+xml" />
+    <item id="delayed-tall-image" href="delayed-tall.svg" media-type="image/svg+xml" />
+  </manifest>
+  <spine>
+    <itemref idref="pink" />
+    <itemref idref="wide-table" />
+    <itemref idref="author-theme" />
+    <itemref idref="dark-foreground" />
+    <itemref idref="default-foreground" />
+    <itemref idref="large-index" />
+    <itemref idref="pseudo-noise" />
+    <itemref idref="pseudo-dropcap" />
+    <itemref idref="forged-location-ignore" />
+    <itemref idref="many-color-roots" />
+    <itemref idref="clipped-prose" />
+    <itemref idref="occluded-callout" />
+    <itemref idref="lazy-image-section" />
+  </spine>
+</package>

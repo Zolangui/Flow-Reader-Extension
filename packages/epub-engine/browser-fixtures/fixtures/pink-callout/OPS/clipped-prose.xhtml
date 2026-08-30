@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Fully clipped prose evidence</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: #f8fafc;
+        font: 18px/1.5 Georgia, serif;
+      }
+      body {
+        padding: 24px;
+      }
+      #clipped-parent {
+        height: 0;
+        overflow: hidden;
+      }
+      #clipped-prose {
+        background-image: linear-gradient(#111827, #1f2937);
+      }
+    </style>
+  </head>
+  <body>
+    <p id="visible-prose">This paragraph is visibly readable.</p>
+    <div id="clipped-parent">
+      <p id="clipped-prose">
+        This authored prose is fully clipped by its parent.
+      </p>
+    </div>
+  </body>
+</html>

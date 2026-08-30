@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Authored color scheme</title>
+    <style>
+      :root {
+        --author-surface: #fffaf2;
+        --author-text: #211a12;
+      }
+
+      body {
+        background-color: var(--author-surface);
+        color: var(--author-text);
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --author-surface: #fffaf2;
+          --author-text: #211a12;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --author-surface: #16120f;
+          --author-text: #f7efe5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Authored dark palette</h1>
+      <p>The publication owns both palettes through custom properties.</p>
+    </main>
+  </body>
+</html>

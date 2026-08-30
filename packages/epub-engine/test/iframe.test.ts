@@ -1,0 +1,1048 @@
+import { describe, it, expect, vi } from 'vitest'
+
+import IframeView from '../src/managers/views/iframe'
+import type { PaginationLifecycle } from '../src/pagination-lifecycle'
+import type Section from '../src/section'
+import type { ViewSettings } from '../src/types'
+
+import { createMockSection, createMockLayout } from './view-mocks'
+
+function createView(
+  section?: Section,
+  options?: Partial<ViewSettings>,
+): IframeView {
+  const s = section || createMockSection()
+  return new IframeView(s, {
+    ignoreClass: '',
+    axis: 'horizontal',
+    direction: 'ltr',
+    width: 800,
+    height: 600,
+    layout: createMockLayout() as unknown as undefined,
+    forceRight: false,
+    allowScriptedContent: false,
+    allowPopups: false,
+    ...options,
+  } as ViewSettings)
+}
+
+describe('IframeView', () => {
+  describe('constructor', () => {
+    it('should set section and index from section', () => {
+      const section = createMockSection(3)
+      const view = createView(section)
+      expect(view.section).toBe(section)
+      expect(view.index).toBe(3)
+    })
+
+    it('should generate unique id starting with epubjs-view-', () => {
+      const view = createView()
+      expect(view.id).toMatch(/^epubjs-view-/)
+    })
+
+    it('should initialize flags to false', () => {
+      const view = createView()
+      expect(view.added).toBe(false)
+      expect(view.displayed).toBe(false)
+      expect(view.rendered).toBe(false)
+    })
+
+    it('should initialize empty highlight/underline/mark records', () => {
+      const view = createView()
+      expect(view.highlights).toEqual({})
+      expect(view.underlines).toEqual({})
+      expect(view.marks).toEqual({})
+    })
+
+    it('should initialize fixedWidth and fixedHeight to 0', () => {
+      const view = createView()
+      expect(view.fixedWidth).toBe(0)
+      expect(view.fixedHeight).toBe(0)
+    })
+
+    it('should set pane to undefined', () => {
+      const view = createView()
+      expect(view.pane).toBeUndefined()
+    })
+
+    it('should merge settings with defaults', () => {
+      const view = createView(undefined, { allowScriptedContent: true })
+      expect(view.settings.allowScriptedContent).toBe(true)
+      expect(view.settings.ignoreClass).toBe('')
+    })
+  })
+
+  describe('container (via constructor)', () => {
+    it('should create a div element with epub-view class', () => {
+      const view = createView()
+      expect(view.element).toBeInstanceOf(HTMLDivElement)
+      expect(view.element.classList.contains('epub-view')).toBe(true)
+    })
+
+    it('should set default styles on the element', () => {
+      const view = createView()
+      expect(view.element.style.height).toBe('0px')
+      expect(view.element.style.width).toBe('0px')
+      expect(view.element.style.overflow).toBe('hidden')
+      expect(view.element.style.position).toBe('relative')
+      expect(view.element.style.display).toBe('block')
+    })
+
+    it('should set flex none for horizontal axis', () => {
+      const view = createView(undefined, { axis: 'horizontal' })
+      expect(view.element.style.flex).toContain('0')
+    })
+
+    it('should set flex initial for vertical axis', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      expect(['initial', '0 1 auto', '']).toContain(view.element.style.flex)
+    })
+  })
+
+  describe('create()', () => {
+    it('should create an iframe element', () => {
+      const view = createView()
+      const iframe = view.create()
+      expect(iframe).toBeInstanceOf(HTMLIFrameElement)
+      expect(view.iframe).toBe(iframe)
+    })
+
+    it('should set iframe id to view id', () => {
+      const view = createView()
+      const iframe = view.create()
+      expect(iframe.id).toBe(view.id)
+    })
+
+    it('should set scrolling to no', () => {
+      const view = createView()
+      const iframe = view.create()
+      expect(iframe.scrolling).toBe('no')
+    })
+
+    it('should set sandbox to allow-same-origin by default', () => {
+      const view = createView()
+      const iframe = view.create()
+      const sandbox =
+        iframe.getAttribute('sandbox') || iframe.sandbox.toString()
+      expect(sandbox).toContain('allow-same-origin')
+    })
+
+    it('should add allow-scripts when allowScriptedContent', () => {
+      const view = createView(undefined, { allowScriptedContent: true })
+      const iframe = view.create()
+      const sandbox =
+        iframe.getAttribute('sandbox') || iframe.sandbox.toString()
+      expect(sandbox).toContain('allow-scripts')
+    })
+
+    it('should add allow-popups when allowPopups', () => {
+      const view = createView(undefined, { allowPopups: true })
+      const iframe = view.create()
+      const sandbox =
+        iframe.getAttribute('sandbox') || iframe.sandbox.toString()
+      expect(sandbox).toContain('allow-popups')
+    })
+
+    it('should detect srcdoc support', () => {
+      const view = createView()
+      view.create()
+      expect(typeof view.supportsSrcdoc).toBe('boolean')
+    })
+
+    it('should return existing iframe if already created', () => {
+      const view = createView()
+      const first = view.create()
+      const second = view.create()
+      expect(first).toBe(second)
+    })
+
+    it('should set added to true', () => {
+      const view = createView()
+      view.create()
+      expect(view.added).toBe(true)
+    })
+
+    it('should set initial dimensions to 0', () => {
+      const view = createView()
+      view.create()
+      expect(view._width).toBe(0)
+      expect(view._height).toBe(0)
+    })
+
+    it('should set element visibility to hidden', () => {
+      const view = createView()
+      view.create()
+      expect(view.element.style.visibility).toBe('hidden')
+    })
+  })
+
+  // Keep the legacy write-mode input covered without allowing dynamic document writes.
+  // assert attach ordering only — never that the returned promise settles.
+  describe('load()', () => {
+    it('should use srcdoc before appending when the legacy write mode is requested', () => {
+      const view = createView(undefined, { method: 'write' })
+      view.create()
+      document.body.appendChild(view.element)
+
+      const onloadAtAppend: HTMLIFrameElement['onload'][] = []
+      const append = view.element.appendChild.bind(view.element)
+      vi.spyOn(view.element, 'appendChild').mockImplementation(((
+        node: Node,
+      ) => {
+        if (node === view.iframe) {
+          onloadAtAppend.push(view.iframe!.onload)
+        }
+        return append(node)
+      }) as typeof view.element.appendChild)
+
+      view.load('<html><body><p id="written">written</p></body></html>')
+
+      expect(onloadAtAppend).toHaveLength(1)
+      expect(onloadAtAppend[0]).toBeTypeOf('function')
+      expect(view.iframe!.onload).toBeTypeOf('function')
+      expect(view.iframe!.srcdoc).toContain('id="written"')
+
+      view.element.remove()
+    })
+
+    it('should attach the load handler before navigating in srcdoc mode', () => {
+      const view = createView(undefined, { method: 'srcdoc' })
+      view.create()
+      document.body.appendChild(view.element)
+
+      view.load('<html><body>srcdoc</body></html>')
+
+      expect(view.iframe!.onload).toBeTypeOf('function')
+      expect(view.iframe!.srcdoc).toContain('srcdoc')
+
+      view.element.remove()
+    })
+
+    it('should revoke the previous blob url when loaded again in blobUrl mode', () => {
+      const view = createView(undefined, { method: 'blobUrl' })
+      view.create()
+
+      const revoke = vi.spyOn(URL, 'revokeObjectURL')
+
+      view.load('<html><body>first</body></html>')
+      const first = view.blobUrl
+
+      view.load('<html><body>second</body></html>')
+
+      expect(revoke).toHaveBeenCalledWith(first)
+      expect(view.blobUrl).not.toBe(first)
+
+      revoke.mockRestore()
+      view.element.remove()
+    })
+  })
+
+  describe('display()', () => {
+    it('should share the in-flight promise across overlapping calls', async () => {
+      const request = vi.fn()
+      const view = createView()
+      let finishRender!: () => void
+      const render = vi.spyOn(view, 'render').mockReturnValue(
+        new Promise<void>((resolve) => {
+          finishRender = resolve
+        }),
+      )
+
+      const first = view.display(request)
+      const second = view.display(request)
+
+      expect(second).toBe(first)
+      expect(render).toHaveBeenCalledTimes(1)
+
+      finishRender()
+
+      await expect(first).resolves.toBe(view)
+      await expect(second).resolves.toBe(view)
+      expect(view.displayed).toBe(true)
+    })
+
+    it('should not render again once displayed', async () => {
+      const request = vi.fn()
+      const view = createView()
+      const render = vi.spyOn(view, 'render').mockResolvedValue(undefined)
+
+      await view.display(request)
+      await expect(view.display(request)).resolves.toBe(view)
+
+      expect(render).toHaveBeenCalledTimes(1)
+    })
+
+    it('should allow a retry after render fails', async () => {
+      const request = vi.fn()
+      const view = createView()
+      const render = vi
+        .spyOn(view, 'render')
+        .mockRejectedValueOnce(new Error('nope'))
+        .mockResolvedValueOnce(undefined)
+
+      await expect(view.display(request)).rejects.toThrow('nope')
+      expect(view.displayed).toBe(false)
+
+      await expect(view.display(request)).resolves.toBe(view)
+      expect(render).toHaveBeenCalledTimes(2)
+    })
+
+    it('should reject instead of hanging when a displayed observer throws', async () => {
+      const request = vi.fn()
+      const view = createView()
+      vi.spyOn(view, 'render').mockResolvedValue(undefined)
+      const brokenObserver = (): never => {
+        throw new Error('observer failed')
+      }
+      view.on('displayed', brokenObserver)
+
+      await expect(view.display(request)).rejects.toThrow('observer failed')
+      expect(view.displayed).toBe(false)
+      expect(view._displaying).toBeUndefined()
+
+      view.off('displayed', brokenObserver)
+      await expect(view.display(request)).resolves.toBe(view)
+    })
+  })
+
+  describe('size()', () => {
+    it('should lock both for pre-paginated layout', () => {
+      const layout = createMockLayout()
+      layout.name = 'pre-paginated'
+      const view = createView(undefined, {
+        layout: layout as unknown as undefined,
+      })
+      view.layout = layout
+      view.create()
+      view.size(800, 600)
+      expect(view.lockedWidth).toBeDefined()
+      expect(view.lockedHeight).toBeDefined()
+    })
+
+    it('should lock height for horizontal axis', () => {
+      const view = createView(undefined, { axis: 'horizontal' })
+      view.create()
+      view.size(800, 600)
+      expect(view.lockedHeight).toBeDefined()
+    })
+
+    it('should lock width for non-horizontal axis', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      view.create()
+      view.size(800, 600)
+      expect(view.lockedWidth).toBeDefined()
+    })
+
+    it('should lock both when the section overrides to pre-paginated', () => {
+      const section = createMockSection()
+      section.properties = [
+        'rendition:layout-pre-paginated',
+        'rendition:spread-none',
+      ]
+      const view = createView(section)
+      view.create()
+      view.size(800, 600)
+      expect(view.lockedWidth).toBeDefined()
+      expect(view.lockedHeight).toBeDefined()
+    })
+
+    it('should update settings width and height', () => {
+      const view = createView()
+      view.create()
+      view.size(1024, 768)
+      expect(view.settings.width).toBe(1024)
+      expect(view.settings.height).toBe(768)
+    })
+  })
+
+  describe('lock()', () => {
+    it('should set lockedWidth for width lock', () => {
+      const view = createView()
+      view.create()
+      view.lock('width', 800, 600)
+      expect(view.lockedWidth).toBeDefined()
+      expect(typeof view.lockedWidth).toBe('number')
+    })
+
+    it('should set lockedHeight for height lock', () => {
+      const view = createView()
+      view.create()
+      view.lock('height', 800, 600)
+      expect(view.lockedHeight).toBeDefined()
+      expect(typeof view.lockedHeight).toBe('number')
+    })
+
+    it('should set both for both lock', () => {
+      const view = createView()
+      view.create()
+      view.lock('both', 800, 600)
+      expect(view.lockedWidth).toBeDefined()
+      expect(view.lockedHeight).toBeDefined()
+    })
+  })
+
+  describe('setAxis()', () => {
+    it('should update settings.axis', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      view.create()
+      view.setAxis('horizontal')
+      expect(view.settings.axis).toBe('horizontal')
+    })
+
+    it('should set flex none for horizontal', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      view.create()
+      view.setAxis('horizontal')
+      expect(view.element.style.flex).toContain('0')
+    })
+
+    it('should set flex initial for vertical', () => {
+      const view = createView(undefined, { axis: 'horizontal' })
+      view.create()
+      view.setAxis('vertical')
+      expect(['initial', '0 1 auto', '']).toContain(view.element.style.flex)
+    })
+  })
+
+  describe('setWritingMode()', () => {
+    it('should store the writing mode', () => {
+      const view = createView()
+      view.setWritingMode('vertical-rl')
+      expect(view.writingMode).toBe('vertical-rl')
+    })
+  })
+
+  describe('setLayout()', () => {
+    it('should update layout reference', () => {
+      const view = createView()
+      const newLayout = createMockLayout()
+      view.setLayout(newLayout)
+      expect(view.layout).toBe(newLayout)
+    })
+  })
+
+  describe('show()', () => {
+    it('should set element visibility to visible', () => {
+      const view = createView()
+      view.create()
+      view.element.style.visibility = 'hidden'
+      view.show()
+      expect(view.element.style.visibility).toBe('visible')
+    })
+
+    it('should set iframe visibility to visible', () => {
+      const view = createView()
+      view.create()
+      view.show()
+      expect(view.iframe!.style.visibility).toBe('visible')
+    })
+
+    it('should emit shown event', () => {
+      const view = createView()
+      view.create()
+      const handler = vi.fn()
+      view.on('shown', handler)
+      view.show()
+      expect(handler).toHaveBeenCalledWith(view)
+    })
+  })
+
+  describe('hide()', () => {
+    it('should be safe before the iframe has been created', () => {
+      const view = createView()
+      const handler = vi.fn()
+      view.on('hidden', handler)
+
+      expect(() => view.hide()).not.toThrow()
+      expect(view.element.style.visibility).toBe('hidden')
+      expect(view.stopExpanding).toBe(true)
+      expect(handler).toHaveBeenCalledWith(view)
+    })
+
+    it('should set element visibility to hidden', () => {
+      const view = createView()
+      view.create()
+      view.element.style.visibility = 'visible'
+      view.hide()
+      expect(view.element.style.visibility).toBe('hidden')
+    })
+
+    it('should emit hidden event', () => {
+      const view = createView()
+      view.create()
+      const handler = vi.fn()
+      view.on('hidden', handler)
+      view.hide()
+      expect(handler).toHaveBeenCalledWith(view)
+    })
+
+    it('should set stopExpanding to true', () => {
+      const view = createView()
+      view.create()
+      view.hide()
+      expect(view.stopExpanding).toBe(true)
+    })
+  })
+
+  describe('offset()', () => {
+    it('should return top and left from element', () => {
+      const view = createView()
+      const result = view.offset()
+      expect(result).toHaveProperty('top')
+      expect(result).toHaveProperty('left')
+      expect(typeof result.top).toBe('number')
+      expect(typeof result.left).toBe('number')
+    })
+  })
+
+  describe('width() / height()', () => {
+    it('should return stored _width', () => {
+      const view = createView()
+      view._width = 500
+      expect(view.width()).toBe(500)
+    })
+
+    it('should return stored _height', () => {
+      const view = createView()
+      view._height = 400
+      expect(view.height()).toBe(400)
+    })
+  })
+
+  describe('reset()', () => {
+    it('should reset dimensions to 0/undefined', () => {
+      const view = createView()
+      view.create()
+      view._width = 800
+      view._height = 600
+      view._textWidth = 100
+      view._contentWidth = 200
+      view.reset()
+      expect(view._width).toBe(0)
+      expect(view._height).toBe(0)
+      expect(view._textWidth).toBeUndefined()
+      expect(view._contentWidth).toBeUndefined()
+      expect(view._textHeight).toBeUndefined()
+      expect(view._contentHeight).toBeUndefined()
+      expect(view._needsReframe).toBe(true)
+    })
+
+    it('should set _contentDirty to true', () => {
+      const view = createView()
+      view.create()
+      view._contentDirty = false
+      view.reset()
+      expect(view._contentDirty).toBe(true)
+    })
+  })
+
+  describe('expand()', () => {
+    it('should use cached _textWidth when _contentDirty is false (horizontal)', () => {
+      const view = createView(undefined, { axis: 'horizontal' })
+      view.create()
+      view.displayed = true
+      view._contentDirty = false
+      view._textWidth = 1200
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(999),
+        textHeight: vi.fn().mockReturnValue(999),
+      } as any
+      view.expand()
+      // Should use cached value, not call textWidth()
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+      expect(view._width).toBe(1200)
+    })
+
+    it('should measure and cache when _contentDirty is true (horizontal)', () => {
+      const view = createView(undefined, { axis: 'horizontal' })
+      view.create()
+      view.displayed = true
+      view._contentDirty = true
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(1200),
+        textHeight: vi.fn().mockReturnValue(600),
+      } as any
+      view.expand()
+      expect(view.contents!.textWidth).toHaveBeenCalledOnce()
+      expect(view._textWidth).toBe(1200)
+      expect(view._contentDirty).toBe(false)
+    })
+
+    it('should use cached _textHeight when _contentDirty is false (vertical)', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      view.create()
+      view.displayed = true
+      view._contentDirty = false
+      view._textHeight = 2000
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(999),
+        textHeight: vi.fn().mockReturnValue(999),
+      } as any
+      view.expand()
+      expect(view.contents!.textHeight).not.toHaveBeenCalled()
+    })
+
+    it('should measure and cache when _contentDirty is true (vertical)', () => {
+      const view = createView(undefined, { axis: 'vertical' })
+      view.create()
+      view.displayed = true
+      view._contentDirty = true
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(800),
+        textHeight: vi.fn().mockReturnValue(2000),
+      } as any
+      view.expand()
+      expect(view.contents!.textHeight).toHaveBeenCalledOnce()
+      expect(view._textHeight).toBe(2000)
+      expect(view._contentDirty).toBe(false)
+    })
+
+    it('should take layout dimensions when the section overrides to pre-paginated', () => {
+      const section = createMockSection()
+      section.properties = [
+        'rendition:layout-pre-paginated',
+        'rendition:spread-none',
+      ]
+      const view = createView(section)
+      const layout = view.layout
+      view.create()
+      view.displayed = true
+      view._contentDirty = true
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(1200),
+        textHeight: vi.fn().mockReturnValue(600),
+      } as any
+      view.expand()
+      // Fixed pages are sized by the layout, never measured and rounded up
+      // to column multiples.
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+      expect(view._width).toBe(layout.columnWidth)
+    })
+
+    it('pads an odd reflowable override even when the package layout is fixed', () => {
+      const section = createMockSection()
+      section.properties = ['rendition:layout-reflowable']
+      const view = createView(section, {
+        axis: 'horizontal',
+        flow: 'paginated',
+        forceEvenPages: true,
+      })
+      view.layout.name = 'pre-paginated'
+      view.create()
+      view.displayed = true
+      view._contentDirty = true
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(400),
+        textHeight: vi.fn(),
+      } as any
+
+      view.expand()
+
+      expect(view._width).toBe(800)
+    })
+  })
+
+  describe('pagination lifecycle', () => {
+    function prepareLifecycleView(lifecycle: PaginationLifecycle): IframeView {
+      const view = createView(undefined, { paginationLifecycle: lifecycle })
+      const contents = {
+        writingMode: vi.fn().mockReturnValue('horizontal-tb'),
+        off: vi.fn(),
+        destroy: vi.fn(),
+      } as any
+      vi.spyOn(view, 'load').mockImplementation(async () => {
+        if (view.iframe && !view.element.contains(view.iframe)) {
+          view.element.appendChild(view.iframe)
+        }
+        view.contents = contents
+        return contents
+      })
+      vi.spyOn(view, 'expand').mockImplementation(() => undefined)
+      return view
+    }
+
+    it('runs before and after real pagination while the final iframe is hidden', async () => {
+      const order: string[] = []
+      const candidate = { mode: 'published' }
+      let view!: IframeView
+      const preparePagination = vi.fn((context) => {
+        order.push('prepare')
+        expect(context.view).toBe(view)
+        expect(view.layout.format).not.toHaveBeenCalled()
+      })
+      const beforePagination = vi.fn((context) => {
+        order.push('before')
+        expect(context.view).toBe(view)
+        expect(context.section).toBe(view.section)
+        expect(context.contents).toBe(view.contents)
+        expect(context.purpose).toBe('reader')
+        expect(context.axis).toBe('horizontal')
+        expect(context.writingMode).toBe('horizontal-tb')
+        expect(view.layout.format).not.toHaveBeenCalled()
+        expect(view.element.style.visibility).toBe('hidden')
+        expect(view.iframe!.style.visibility).toBe('hidden')
+        return candidate
+      })
+      const afterPagination = vi.fn((context, receivedCandidate) => {
+        order.push('after')
+        expect(context.view).toBe(view)
+        expect(receivedCandidate).toBe(candidate)
+        expect(view.layout.format).toHaveBeenCalledOnce()
+        expect(view.element.style.visibility).toBe('hidden')
+        expect(view.iframe!.style.visibility).toBe('hidden')
+      })
+      view = prepareLifecycleView({
+        preparePagination,
+        beforePagination,
+        afterPagination,
+      })
+
+      await view.render(vi.fn())
+
+      expect(order).toEqual(['prepare', 'before', 'after'])
+      expect(preparePagination).toHaveBeenCalledOnce()
+      expect(beforePagination).toHaveBeenCalledOnce()
+      expect(afterPagination).toHaveBeenCalledOnce()
+    })
+
+    it('reports detached Atlas work through the same context contract', async () => {
+      const beforePagination = vi.fn()
+      const view = createView(undefined, {
+        paginationPurpose: 'layout-measurement',
+        paginationLifecycle: { beforePagination },
+      })
+      const contents = {
+        writingMode: vi.fn().mockReturnValue('horizontal-tb'),
+        off: vi.fn(),
+        destroy: vi.fn(),
+      } as any
+      vi.spyOn(view, 'load').mockImplementation(async () => {
+        if (view.iframe && !view.element.contains(view.iframe)) {
+          view.element.appendChild(view.iframe)
+        }
+        view.contents = contents
+        return contents
+      })
+      vi.spyOn(view, 'expand').mockImplementation(() => undefined)
+
+      await view.render(vi.fn())
+
+      expect(beforePagination.mock.calls[0]![0].purpose).toBe(
+        'layout-measurement',
+      )
+    })
+
+    it('aborts a pending hook and never paginates or validates a released view', async () => {
+      let startHook!: () => void
+      const hookStarted = new Promise<void>((resolve) => {
+        startHook = resolve
+      })
+      let finishHook!: () => void
+      const pendingHook = new Promise<void>((resolve) => {
+        finishHook = resolve
+      })
+      const afterPagination = vi.fn()
+      const view = prepareLifecycleView({
+        beforePagination: () => {
+          startHook()
+          return pendingHook
+        },
+        afterPagination,
+      })
+
+      const rendering = view.render(vi.fn())
+      await hookStarted
+      view.destroy()
+
+      await expect(rendering).rejects.toMatchObject({ name: 'AbortError' })
+      expect(view.layout.format).not.toHaveBeenCalled()
+      expect(afterPagination).not.toHaveBeenCalled()
+      expect(view.element.querySelector('iframe')).toBeNull()
+      finishHook()
+      await Promise.resolve()
+    })
+  })
+
+  describe('measureContentLeaves()', () => {
+    it('returns raw reflowable content leaves before default-manager parity padding', () => {
+      const view = createView(undefined, {
+        axis: 'horizontal',
+        flow: 'paginated',
+        forceEvenPages: true,
+      })
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(1200),
+        textHeight: vi.fn(),
+      } as any
+      // A visible default-manager view would have been widened to four
+      // columns. The atlas must retain only the three authored columns.
+      view._width = 1600
+
+      const result = view.measureContentLeaves()
+
+      expect(result).toEqual({
+        layout: 'reflowable',
+        flow: 'paginated',
+        axis: 'horizontal',
+        viewportMode: 'two-up',
+        rawExtent: 1200,
+        leafExtent: 400,
+        leafCount: 3,
+      })
+      expect(view.contents!.textWidth).toHaveBeenCalledOnce()
+    })
+
+    it('uses the vertical logical extent and reports a single viewport mode', () => {
+      const view = createView(undefined, {
+        axis: 'vertical',
+        flow: 'paginated',
+      })
+      view.contents = {
+        textWidth: vi.fn(),
+        textHeight: vi.fn().mockReturnValue(1201),
+      } as any
+
+      const result = view.measureContentLeaves()
+
+      expect(result.axis).toBe('vertical')
+      expect(result.viewportMode).toBe('single')
+      expect(result.rawExtent).toBe(1201)
+      expect(result.leafExtent).toBe(600)
+      expect(result.leafCount).toBe(3)
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+    })
+
+    it('treats a fixed paginated section as one authored leaf', () => {
+      const section = createMockSection()
+      section.properties = ['rendition:layout-pre-paginated']
+      const view = createView(section, { flow: 'paginated' })
+      view.contents = {
+        textWidth: vi.fn(),
+        textHeight: vi.fn(),
+      } as any
+
+      const result = view.measureContentLeaves()
+
+      expect(result).toMatchObject({
+        layout: 'pre-paginated',
+        flow: 'paginated',
+        leafCount: 1,
+        rawExtent: null,
+        leafExtent: null,
+      })
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+      expect(view.contents!.textHeight).not.toHaveBeenCalled()
+    })
+
+    it('keeps a fixed section discrete when the surrounding flow is scrolled', () => {
+      const section = createMockSection()
+      section.properties = ['rendition:layout-pre-paginated']
+      const view = createView(section, { axis: 'vertical', flow: 'scrolled' })
+      view.layout.props.flow = 'scrolled'
+      view.contents = {
+        textWidth: vi.fn(),
+        textHeight: vi.fn(),
+      } as any
+
+      const result = view.measureContentLeaves()
+
+      expect(result).toMatchObject({
+        layout: 'pre-paginated',
+        flow: 'paginated',
+        leafCount: 1,
+      })
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+      expect(view.contents!.textHeight).not.toHaveBeenCalled()
+    })
+
+    it('does not invent discrete pages for rolling content', () => {
+      const view = createView(undefined, { axis: 'vertical', flow: 'scrolled' })
+      view.layout.props.flow = 'scrolled'
+      view.contents = {
+        textWidth: vi.fn(),
+        textHeight: vi.fn(),
+      } as any
+
+      const result = view.measureContentLeaves()
+
+      expect(result).toMatchObject({
+        flow: 'roll',
+        axis: 'vertical',
+        leafCount: 0,
+        rawExtent: null,
+        leafExtent: null,
+      })
+      expect(view.contents!.textWidth).not.toHaveBeenCalled()
+      expect(view.contents!.textHeight).not.toHaveBeenCalled()
+    })
+
+    it('requires loaded iframe contents and a positive page extent', () => {
+      const view = createView()
+      expect(() => view.measureContentLeaves()).toThrow(
+        'Cannot measure content leaves before iframe contents are loaded',
+      )
+
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(100),
+        textHeight: vi.fn(),
+      } as any
+      view.layout.pageWidth = 0
+      expect(() => view.measureContentLeaves()).toThrow(
+        'Cannot measure reflowable content leaves without a positive page extent',
+      )
+    })
+  })
+
+  describe('setLayout()', () => {
+    it('should mark _contentDirty before expand', () => {
+      const view = createView()
+      view.create()
+      view.displayed = true
+      view._contentDirty = false
+      view.contents = {
+        textWidth: vi.fn().mockReturnValue(800),
+        textHeight: vi.fn().mockReturnValue(600),
+      } as any
+      const layout = createMockLayout()
+      view.setLayout(layout as any)
+      // setLayout marks dirty, so expand should re-measure
+      expect(view.contents!.textWidth).toHaveBeenCalled()
+    })
+  })
+
+  describe('reframe()', () => {
+    it('should set element and iframe dimensions', () => {
+      const view = createView()
+      view.create()
+      view.reframe(500, 400)
+      expect(view.element.style.width).toBe('500px')
+      expect(view.element.style.height).toBe('400px')
+      expect(view.iframe!.style.width).toBe('500px')
+      expect(view.iframe!.style.height).toBe('400px')
+      expect(view._width).toBe(500)
+      expect(view._height).toBe(400)
+    })
+
+    it('should emit resized event', () => {
+      const view = createView()
+      view.create()
+      const handler = vi.fn()
+      view.on('resized', handler)
+      view.reframe(500, 400)
+      expect(handler).toHaveBeenCalled()
+      const arg = handler.mock.calls[0][0]
+      expect(arg.width).toBe(500)
+      expect(arg.height).toBe(400)
+    })
+
+    it('should track prevBounds', () => {
+      const view = createView()
+      view.create()
+      view.reframe(500, 400)
+      expect(view.prevBounds).toBeDefined()
+      expect(view.prevBounds!.width).toBe(500)
+      expect(view.prevBounds!.height).toBe(400)
+    })
+  })
+
+  describe('destroy()', () => {
+    it('should not throw when not displayed', () => {
+      const view = createView()
+      expect(() => view.destroy()).not.toThrow()
+    })
+
+    it('should clear __listeners', () => {
+      const view = createView()
+      view.on('shown', vi.fn())
+      view.destroy()
+      expect(view.__listeners).toEqual({})
+    })
+
+    it('should abort in-flight section render and suppress loaderror', async () => {
+      const section = createMockSection()
+      ;(section as any).render = vi.fn(
+        (_req?: unknown, signal?: AbortSignal) =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'))
+            })
+          }),
+      )
+
+      const view = createView(section)
+      const loadErrorHandler = vi.fn()
+      const renderedHandler = vi.fn()
+      view.on('loaderror', loadErrorHandler)
+      view.on('rendered', renderedHandler)
+
+      const renderPromise = view.render(vi.fn())
+      view.destroy()
+
+      await expect(renderPromise).rejects.toMatchObject({ name: 'AbortError' })
+      expect(loadErrorHandler).not.toHaveBeenCalled()
+      expect(renderedHandler).not.toHaveBeenCalled()
+    })
+
+    it('cannot revive a disposed view when a request resolves late', async () => {
+      const section = createMockSection()
+      let resolveRender!: (contents: string) => void
+      ;(section as any).render = vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveRender = resolve
+          }),
+      )
+
+      const view = createView(section)
+      const displayedHandler = vi.fn()
+      const renderedHandler = vi.fn()
+      view.on('displayed', displayedHandler)
+      view.on('rendered', renderedHandler)
+
+      const displayPromise = view.display(vi.fn())
+      view.destroy()
+      resolveRender('<html><body>late chapter</body></html>')
+
+      await expect(displayPromise).rejects.toMatchObject({ name: 'AbortError' })
+      expect(view.element.querySelector('iframe')).toBeNull()
+      expect(view.iframe).toBeUndefined()
+      expect(displayedHandler).not.toHaveBeenCalled()
+      expect(renderedHandler).not.toHaveBeenCalled()
+      expect(section.unload).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('unload()', () => {
+    it('keeps manager listeners so a continuous view can be displayed again', () => {
+      const view = createView()
+      const shownHandler = vi.fn()
+      view.on('shown', shownHandler)
+
+      view.unload()
+      view.emit('shown', view)
+
+      expect(shownHandler).toHaveBeenCalledWith(view)
+      expect(view._disposed).toBe(false)
+    })
+
+    it('releases iframe document and window references', () => {
+      const view = createView()
+      const iframe = view.create()
+      view.element.appendChild(iframe)
+      view.document = iframe.contentDocument!
+      view.window = iframe.contentWindow!
+      view.contents = {
+        off: vi.fn(),
+        destroy: vi.fn(),
+      } as any
+
+      view.unload()
+
+      expect(view.iframe).toBeUndefined()
+      expect(view.contents).toBeUndefined()
+      expect(view.document).toBeUndefined()
+      expect(view.window).toBeUndefined()
+      expect(view.element.querySelector('iframe')).toBeNull()
+    })
+  })
+})

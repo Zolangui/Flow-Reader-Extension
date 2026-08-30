@@ -2,11 +2,7 @@
   "extends": "../../tsconfig.next.json",
   "compilerOptions": {
     "target": "esnext",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": false,
@@ -20,27 +16,15 @@
     "jsx": "preserve",
     "downlevelIteration": true,
     "experimentalDecorators": true,
+    "baseUrl": "../..",
     "paths": {
-      "@flow/reader/*": [
-        "apps/reader/src/*"
-      ],
-      "@flow/internal": [
-        "packages/internal/src/index.ts"
-      ],
-      "@flow/epubjs/*": [
-        "packages/epubjs/*"
-      ],
+      "@flow/reader/*": ["apps/reader/src/*"],
+      "@flow/internal": ["packages/internal/src/index.ts"],
       "@wllama/wllama": [
         "apps/reader/node_modules/@wllama/wllama/esm/index.d.ts"
       ]
     }
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "test", "vitest.config.ts"]
 }

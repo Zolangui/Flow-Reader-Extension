@@ -1,0 +1,23 @@
+:root {
+  --author-surface: #fffaf2;
+  --author-text: #211a12;
+  --author-accent: #9b4f24;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --author-surface: #fffaf2;
+    --author-text: #211a12;
+    --author-accent: #9b4f24;
+  }
+}
+
+@supports (color: rgb(0 0 0)) {
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --author-surface: #16120f;
+      --author-text: #f7efe5;
+      --author-accent: #e59a67;
+    }
+  }
+}

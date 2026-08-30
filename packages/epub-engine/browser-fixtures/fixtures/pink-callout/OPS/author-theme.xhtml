@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Tema autoral</title>
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      @import url('author-theme-palettes.css');
+
+      :root {
+        color-scheme: light dark;
+      }
+
+      body {
+        margin: 0;
+        padding: 2rem;
+        background-color: var(--author-surface);
+        color: var(--author-text);
+        font: 18px/1.55 Georgia, serif;
+      }
+
+      .author-card {
+        border-left: 0.35rem solid var(--author-accent);
+        padding: 1rem 1.25rem;
+        background-color: var(--author-surface);
+        color: var(--author-text);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="author-card">
+        <h1>Tema escuro criado pela editora</h1>
+        <p>
+          O Lumen ativa a paleta autoral na posição original da cascata, sem
+          copiar seletores nem reescrever o CSS da publicação.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>

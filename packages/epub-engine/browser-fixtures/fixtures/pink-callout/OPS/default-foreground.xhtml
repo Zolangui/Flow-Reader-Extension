@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Default inherited foreground presentation fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        font: 18px/1.65 Georgia, serif;
+      }
+
+      body {
+        padding: 42px;
+      }
+
+      .default-accent {
+        color: #ec008c;
+        font-size: 2.4em;
+        font-weight: 700;
+      }
+
+      .intro {
+        max-width: 42rem;
+        text-align: center;
+      }
+
+      #default-marker-item {
+        color: #000000;
+        list-style-type: disc;
+      }
+
+      #default-marker-item > p {
+        color: #dce4e8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1><span class="default-accent">Default inherited foreground</span></h1>
+    <p id="default-foreground-prose" class="intro">
+      <em>
+        This substantial paragraph deliberately has no authored color on the
+        body, paragraph, or emphasis element. It therefore inherits the user
+        agent default black foreground, just as many older EPUB chapters do.
+        Adaptive must make the prose readable on a dark reader canvas without
+        neutralizing the explicit pink accent or altering pagination.
+      </em>
+    </p>
+    <ul>
+      <li id="default-marker-item">
+        <p>The prose is already readable, while its marker inherits black.</p>
+      </li>
+    </ul>
+  </body>
+</html>

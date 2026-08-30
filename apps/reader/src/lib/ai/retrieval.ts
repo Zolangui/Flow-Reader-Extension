@@ -210,9 +210,8 @@ export interface RetrievalParams {
   topK: number
   maxChars: number
   expandContext: boolean
-  // New integration features
+  // User-provided reading context
   userAnnotations?: string[]
-  userDefinitions?: string[]
 }
 
 /**
@@ -1036,7 +1035,6 @@ export function buildReadingUserPrompt(
   canSearchDeeper = false,
   extras?: {
     annotations?: string[]
-    definitions?: string[]
   },
 ): string {
   // Group and Sort by Reading Order
@@ -1067,11 +1065,10 @@ export function buildReadingUserPrompt(
 
   // v3.11: Inject User Context
   let userContextBlock = ''
-  if (extras?.annotations?.length || extras?.definitions?.length) {
+  if (extras?.annotations?.length) {
     userContextBlock = `
-USER'S NOTES & VOCABULARY (Prioritize these if relevant):
+USER'S NOTES (Prioritize these if relevant):
 ---
-${extras.definitions?.map((d) => `[Defined Term]: ${d}`).join('\n') || ''}
 ${extras.annotations?.map((a) => `[User Note]: ${a}`).join('\n') || ''}
 ---
 `

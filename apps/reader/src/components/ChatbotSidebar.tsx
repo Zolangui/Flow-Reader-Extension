@@ -848,13 +848,15 @@ export const ChatbotSidebar: React.FC<{ className?: string }> = ({
                     <span>{t('chatbot.indexing_knowledge')}</span>
                   </div>
                   <span className="bg-primary/10 rounded-full px-2 py-0.5">
-                    {indexProgress}%
+                    {Math.max(0, Math.min(100, Math.round(indexProgress)))}%
                   </span>
                 </div>
                 <div className="bg-primary/10 border-primary/5 h-2 w-full overflow-hidden rounded-full border p-0.5">
                   <div
                     className="from-primary via-primary-light to-primary h-full rounded-full bg-gradient-to-r shadow-[0_0_12px_rgba(var(--color-primary),0.5)] transition-all duration-500 ease-out"
-                    style={{ width: `${indexProgress}%` }}
+                    style={{
+                      width: `${Math.max(0, Math.min(100, indexProgress))}%`,
+                    }}
                   />
                 </div>
                 <p className="text-subtle text-center text-[10px] font-medium italic opacity-80">

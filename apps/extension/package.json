@@ -4,8 +4,8 @@
   "version": "2.0.3",
   "description": "Lumen Read ePub reader as a browser extension.",
   "scripts": {
-    "build:chrome": "echo 'Building for Chrome...' && cp manifests/chrome_manifest_v3.json dist/manifest.json",
-    "build:firefox": "echo 'Building for Firefox...' && cp manifests/firefox_manifest_v3.json dist/manifest.json"
+    "build:chrome": "pnpm -w build:ext:chrome",
+    "build:firefox": "pnpm -w build:ext:firefox"
   },
   "devDependencies": {}
 }

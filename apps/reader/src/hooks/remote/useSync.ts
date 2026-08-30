@@ -2,9 +2,13 @@ import { useCallback, useEffect } from 'react'
 import { useSnapshot } from 'valtio'
 
 import { Annotation } from '@flow/reader/annotation'
-import { BookRecord } from '@flow/reader/db'
+import {
+  BookRecord,
+  isRestoreLocationRecord,
+  isSupportedCanonicalProgressRecord,
+} from '@flow/reader/db'
 import { BookTab } from '@flow/reader/models'
-import { uploadData } from '@flow/reader/sync'
+import { queueBooksUpload } from '@flow/reader/sync'
 
 import { useRemoteBooks } from './useRemote'
 
@@ -28,7 +32,7 @@ export function useSync(tab: BookTab) {
               ...changes,
             }
 
-            uploadData(remoteBooks)
+            void queueBooksUpload(remoteBooks)
 
             return [...remoteBooks]
           }
@@ -40,17 +44,28 @@ export function useSync(tab: BookTab) {
   )
 
   useEffect(() => {
-    sync({
-      cfi: location?.start.cfi,
-      percentage: book.percentage,
-    })
-  }, [sync, book.percentage, location?.start.cfi])
-
-  useEffect(() => {
-    sync({
-      definitions: book.definitions as string[],
-    })
-  }, [book.definitions, sync])
+    const restoreLocation = isRestoreLocationRecord(book.restoreLocation)
+      ? book.restoreLocation
+      : undefined
+    const cfi = restoreLocation?.cfi ?? location?.start.cfi
+    const canonicalProgress = isSupportedCanonicalProgressRecord(
+      book.canonicalProgress,
+    )
+      ? book.canonicalProgress
+      : undefined
+    const changes: Partial<BookRecord> = {}
+    if (cfi) changes.cfi = cfi
+    if (restoreLocation) changes.restoreLocation = restoreLocation
+    if (Number.isFinite(book.percentage)) changes.percentage = book.percentage
+    if (canonicalProgress) changes.canonicalProgress = canonicalProgress
+    if (Object.keys(changes).length > 0) void sync(changes)
+  }, [
+    sync,
+    book.canonicalProgress,
+    book.percentage,
+    book.restoreLocation,
+    location?.start.cfi,
+  ])
 
   useEffect(() => {
     sync({

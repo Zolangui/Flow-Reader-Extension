@@ -87,8 +87,6 @@ export default {
   'menu.copy': 'コピー',
   'menu.search_in_book': '本を検索',
   'menu.annotate': '注釈',
-  'menu.define': '定義',
-  'menu.undefine': '未定義',
   'menu.create': '作成',
   'menu.delete': '削除',
   'menu.update': '更新',
@@ -162,16 +160,11 @@ export default {
   'details.unknown_author': '不明な著者',
 
   // Annotation View
-  'annotation.definitions': '定義',
   'annotation.annotations': '注釈',
   'annotation.notes': 'メモ',
-  'annotation.definition_label': '定義',
-  'annotation.remove_definition': '定義を削除',
   'annotation.note_label': 'メモ',
   'annotation.highlight_label': 'ハイライト',
   'annotation.remove_annotation': '注釈を削除',
-  'annotation.empty_definitions':
-    'テキストを選択して本のアイコンをクリックし、定義を追加します。',
   'annotation.empty_annotations':
     'テキストをハイライトして注釈やメモを追加します。',
 
@@ -181,6 +174,9 @@ export default {
   // Image View
   'image.header': '画像',
   'image.untitled_section': '無題のセクション',
+  'image.indexing': '画像を検索しています…',
+  'image.empty': 'この本には画像が見つかりませんでした。',
+  'image.index_failed': '画像を索引化できませんでした。',
 
   // Search View
   'search.header': '検索',
@@ -196,6 +192,11 @@ export default {
   'timeline.days': '日',
   'timeline.current_book_progress': '現在の本の進捗',
   'timeline.pages_read': '読んだページ数',
+  'timeline.calculating_pages': 'ページ数を計算中…',
+  'timeline.page_total_estimated': '推定合計',
+  'timeline.page_total_current_layout': '現在の画面と文字設定での合計',
+  'timeline.page_position_estimated_total_current_layout':
+    '推定位置；合計は現在の画面と文字設定に基づきます',
   'timeline.avg_speed': '平均速度',
   'timeline.est_finish': '完了予定',
   'timeline.reading_calendar': '読書カレンダー',
@@ -204,8 +205,20 @@ export default {
 
   // Theme View
   'theme.header': 'テーマ',
-  'theme.source_color_label': 'ソースカラー',
-  'theme.background_color_label': '背景色',
+  'theme.close': 'テーマ設定を閉じる',
+  'theme.color_scheme_label': 'カラーモード',
+  'theme.scheme_light': 'ライト',
+  'theme.scheme_dark': 'ダーク',
+  'theme.scheme_system': 'システム',
+  'theme.source_color_label': 'アクセントカラー',
+  'theme.source_color_help': 'アクセントと色付きの読書背景を変更します。',
+  'theme.apply_source_color': '適用',
+  'theme.background_color_label': '読書背景',
+  'theme.background_default': '純白',
+  'theme.background_soft': 'ソフト',
+  'theme.background_tinted': '色付き',
+  'theme.background_deep': '濃い色合い',
+  'theme.background_color_help': 'リーダーがライトモードのときに使用されます。',
 
   untitled: '無題',
 
@@ -384,7 +397,6 @@ export default {
   'ai.settings.remote_data_consent_desc':
     '質問、最近のチャット、選択された書籍の抜粋を選択したプロバイダーに送信できます。',
   'ai.settings.share_annotations': '注釈も送信',
-  'ai.settings.share_definitions': '保存した定義も送信',
   'ai.settings.auto_repair_citations': '引用の修復を自動で再試行',
   'ai.error.base_url_required': 'まずサーバー URL を入力してください。',
   'ai.error.invalid_base_url':

@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 
+import { normalizeThemeSourceColor } from '@flow/reader/lib/theme-colors'
 import { useSettings } from '@flow/reader/state'
 
 export function useSourceColor() {
@@ -7,16 +8,20 @@ export function useSourceColor() {
 
   const setSourceColor = useCallback(
     (source: string) => {
+      const normalized = normalizeThemeSourceColor(source)
       setSettings((prev) => ({
         ...prev,
         theme: {
           ...prev.theme,
-          source,
+          source: normalized,
         },
       }))
     },
     [setSettings],
   )
 
-  return { sourceColor: theme?.source ?? '#0ea5e9', setSourceColor }
+  return {
+    sourceColor: normalizeThemeSourceColor(theme?.source),
+    setSourceColor,
+  }
 }

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-fixture-status="running">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lumen Presentation Engine — browser fixture</title>
+    <link rel="stylesheet" href="/presentation-harness.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Lumen Presentation Engine · desenvolvimento</p>
+        <h1>Published × Adaptive</h1>
+        <p id="fixture-description" class="lede">
+          O mesmo EPUB, renderizado pelo motor real. O painel Adaptive só aceita
+          a correção quando contraste, reversão e geometria passam pelo gate.
+        </p>
+        <nav class="fixture-nav" aria-label="Casos de teste">
+          <a href="?case=pink-callout">Cor rosa</a>
+          <a href="?case=wide-table">Tabela larga</a>
+          <a href="?case=author-theme">Tema autoral</a>
+          <a href="?case=dark-foreground">Texto herdado</a>
+          <a href="?case=default-foreground">Texto padrão</a>
+        </nav>
+      </div>
+      <div id="status" class="status status-running" role="status">
+        Executando…
+      </div>
+    </header>
+
+    <main>
+      <section class="comparison" aria-label="Comparação visual">
+        <article class="reader-card">
+          <div class="reader-card-heading">
+            <div>
+              <span class="mode-tag">Published</span>
+              <h2>Design original</h2>
+            </div>
+            <span id="published-color" class="color-chip">—</span>
+          </div>
+          <div id="published-reader" class="reader-surface"></div>
+        </article>
+
+        <article class="reader-card">
+          <div class="reader-card-heading">
+            <div>
+              <span class="mode-tag mode-tag-adaptive">Adaptive</span>
+              <h2>Reparo validado</h2>
+            </div>
+            <span id="adaptive-color" class="color-chip">—</span>
+          </div>
+          <div id="adaptive-reader" class="reader-surface"></div>
+        </article>
+      </section>
+
+      <section class="report-card">
+        <div class="report-heading">
+          <div>
+            <p class="eyebrow">Gate de admissão</p>
+            <h2 id="fixture-title">Resultado do vertical slice rosa</h2>
+          </div>
+          <button id="published-toggle" type="button" disabled>
+            Ver restauração no painel Adaptive
+          </button>
+        </div>
+        <ul id="checks" class="checks" aria-live="polite"></ul>
+        <details>
+          <summary>Diagnóstico serializável</summary>
+          <pre id="result-json">Aguardando o motor…</pre>
+        </details>
+      </section>
+    </main>
+
+    <div id="rollback-probe" class="rollback-probe" aria-hidden="true"></div>
+    <script type="module" src="/presentation-bootstrap.js"></script>
+  </body>
+</html>

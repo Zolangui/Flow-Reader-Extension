@@ -1,0 +1,1020 @@
+import type JSZip from 'jszip'
+
+import Archive from './archive'
+import CanonicalLocations from './canonical-locations'
+import Container from './container'
+import DisplayOptions from './displayoptions'
+import EpubCFI from './epubcfi'
+import Locations from './locations'
+import Navigation from './navigation'
+import Packaging from './packaging'
+import type { WebPubManifest } from './packaging'
+import PageList from './pagelist'
+import Rendition from './rendition'
+import Resources from './resources'
+import type Section from './section'
+import Spine from './spine'
+import Store from './store'
+import type {
+  IEventEmitter,
+  BookOptions,
+  RenditionOptions,
+  RequestFunction,
+  PackagingManifestObject,
+  PackagingMetadataObject,
+} from './types'
+import { EPUBJS_VERSION, EVENTS } from './utils/constants'
+import { extend, defer, EpubError, setDOMParser } from './utils/core'
+import EventEmitter from './utils/event-emitter'
+import Path from './utils/path'
+import request from './utils/request'
+import Url from './utils/url'
+
+interface BookLoadingState {
+  manifest: defer<PackagingManifestObject>
+  spine: defer<Spine>
+  metadata: defer<PackagingMetadataObject>
+  cover: defer<string>
+  navigation: defer<Navigation>
+  pageList: defer<PageList>
+  resources: defer<Resources>
+  displayOptions: defer<DisplayOptions>
+}
+
+interface BookLoadedState {
+  manifest: Promise<PackagingManifestObject>
+  spine: Promise<Spine>
+  metadata: Promise<PackagingMetadataObject>
+  cover: Promise<string>
+  navigation: Promise<Navigation>
+  pageList: Promise<PageList>
+  resources: Promise<Resources>
+  displayOptions: Promise<DisplayOptions>
+}
+
+export interface BookEvents extends Record<string, any[]> {
+  openFailed: [Error]
+}
+
+const CONTAINER_PATH = 'META-INF/container.xml'
+const IBOOKS_DISPLAY_OPTIONS_PATH =
+  'META-INF/com.apple.ibooks.display-options.xml'
+
+const INPUT_TYPE = {
+  BINARY: 'binary',
+  BASE64: 'base64',
+  EPUB: 'epub',
+  OPF: 'opf',
+  MANIFEST: 'json',
+  DIRECTORY: 'directory',
+}
+
+function objectTag(value: unknown): string {
+  return Object.prototype.toString.call(value)
+}
+
+/** Accept binary inputs created by another Window without trusting instanceof. */
+function isArrayBufferInput(value: unknown): value is ArrayBuffer {
+  return (
+    objectTag(value) === '[object ArrayBuffer]' &&
+    typeof (value as { byteLength?: unknown } | undefined)?.byteLength ===
+      'number'
+  )
+}
+
+function isBlobInput(value: unknown): value is Blob {
+  return (
+    objectTag(value) === '[object Blob]' &&
+    typeof (value as { size?: unknown } | undefined)?.size === 'number' &&
+    typeof (value as { arrayBuffer?: unknown } | undefined)?.arrayBuffer ===
+      'function'
+  )
+}
+
+/**
+ * An Epub representation with methods for the loading, parsing and manipulation
+ * of its contents.
+ * @class
+ * @param {string} [url]
+ * @param {object} [options]
+ * @param {method} [options.requestMethod] a request function to use instead of the default
+ * @param {boolean} [options.requestCredentials=undefined] send the xhr request withCredentials
+ * @param {object} [options.requestHeaders=undefined] send the xhr request headers
+ * @param {string} [options.encoding=binary] optional to pass 'binary' or base64' for archived Epubs
+ * @param {string} [options.replacements=none] use base64, blobUrl, or none for replacing assets in archived Epubs
+ * @param {method} [options.canonical] optional function to determine canonical urls for a path
+ * @param {string} [options.openAs] optional string to determine the input type
+ * @param {string} [options.store=false] cache the contents in local storage, value should be the name of the reader
+ * @param {function} [options.domParser] optional DOMParser constructor to use instead of the global one (e.g. jsdom in Node); process-global, see setDOMParser
+ * @returns {Book}
+ * @example new Book("/path/to/book.epub", {})
+ * @example new Book({ replacements: "blobUrl" })
+ */
+class Book implements IEventEmitter<BookEvents> {
+  settings: BookOptions
+  opening: defer<Book>
+  opened!: Promise<Book>
+  isOpen: boolean
+  loading!: BookLoadingState
+  loaded!: BookLoadedState
+  ready!: Promise<
+    [
+      PackagingManifestObject,
+      Spine,
+      PackagingMetadataObject,
+      string,
+      Navigation,
+      Resources,
+      DisplayOptions,
+    ]
+  >
+  /**
+   * @member {Promise<void>} replacementsReady resolves when all resource
+   * replacement URLs (blob/base64) have been created. Undefined for
+   * unarchived books or when replacements are "none".
+   */
+  replacementsReady: Promise<void> | undefined
+  isRendered: boolean
+  request: RequestFunction
+  spine!: Spine
+  locations!: Locations
+  canonicalLocations!: CanonicalLocations
+  navigation!: Navigation
+  pageList!: PageList
+  url!: Url
+  path: Path | undefined
+  archived: boolean
+  archive: Archive | undefined
+  storage: Store | undefined
+  resources!: Resources
+  rendition: Rendition | undefined
+  container: Container | undefined
+  packaging!: Packaging
+  displayOptions: DisplayOptions | undefined
+  package: Packaging | undefined
+  cover!: string
+
+  declare on: IEventEmitter<BookEvents>['on']
+  declare off: IEventEmitter<BookEvents>['off']
+  declare emit: IEventEmitter<BookEvents>['emit']
+
+  constructor(
+    url?: string | ArrayBuffer | Blob | BookOptions,
+    options?: BookOptions,
+  ) {
+    // Allow passing just options to the Book
+    if (
+      typeof options === 'undefined' &&
+      typeof url !== 'string' &&
+      !isBlobInput(url) &&
+      !isArrayBufferInput(url)
+    ) {
+      options = url
+      url = undefined
+    }
+
+    this.settings = extend({} as BookOptions, {
+      requestMethod: undefined,
+      requestCredentials: undefined,
+      requestHeaders: undefined,
+      encoding: undefined,
+      replacements: undefined,
+      canonical: undefined,
+      openAs: undefined,
+      store: undefined,
+      domParser: undefined,
+    })
+
+    extend(this.settings, options)
+
+    // Must run before any parsing; setDOMParser state is process-global.
+    if (this.settings.domParser) {
+      setDOMParser(this.settings.domParser)
+    }
+
+    // Promises
+    this.opening = new defer<Book>()
+    /**
+     * @member {promise} opened returns after the book is loaded
+     * @memberof Book
+     */
+    this.opened = this.opening.promise
+    this.isOpen = false
+
+    this.loading = {
+      manifest: new defer<PackagingManifestObject>(),
+      spine: new defer<Spine>(),
+      metadata: new defer<PackagingMetadataObject>(),
+      cover: new defer<string>(),
+      navigation: new defer<Navigation>(),
+      pageList: new defer<PageList>(),
+      resources: new defer<Resources>(),
+      displayOptions: new defer<DisplayOptions>(),
+    }
+
+    this.loaded = {
+      manifest: this.loading.manifest.promise,
+      spine: this.loading.spine.promise,
+      metadata: this.loading.metadata.promise,
+      cover: this.loading.cover.promise,
+      navigation: this.loading.navigation.promise,
+      pageList: this.loading.pageList.promise,
+      resources: this.loading.resources.promise,
+      displayOptions: this.loading.displayOptions.promise,
+    }
+
+    /**
+     * @member {promise} ready returns after the book is loaded and parsed
+     * @memberof Book
+     * @private
+     */
+    this.ready = Promise.all([
+      this.loaded.manifest,
+      this.loaded.spine,
+      this.loaded.metadata,
+      this.loaded.cover,
+      this.loaded.navigation,
+      this.loaded.resources,
+      this.loaded.displayOptions,
+    ])
+
+    // Queue for methods used before opening
+    this.isRendered = false
+    // this._q = queue(this);
+
+    /**
+     * @member {method} request
+     * @memberof Book
+     * @private
+     */
+    this.request = this.settings.requestMethod || request
+
+    /**
+     * @member {Spine} spine
+     * @memberof Book
+     */
+    this.spine = new Spine()
+
+    /**
+     * @member {Locations} locations
+     * @memberof Book
+     */
+    const sectionRequest: RequestFunction = (
+      path,
+      type,
+      credentials,
+      headers,
+      signal,
+    ) => this.load(path, type, credentials, headers, signal)
+    this.locations = new Locations(this.spine, sectionRequest)
+    this.canonicalLocations = new CanonicalLocations(
+      this.spine,
+      sectionRequest,
+      () => this.locations.layout || this.packaging?.metadata.layout,
+    )
+
+    /**
+     * @member {Navigation} navigation
+     * @memberof Book
+     */
+    this.navigation = undefined!
+
+    /**
+     * @member {PageList} pagelist
+     * @memberof Book
+     */
+    this.pageList = undefined!
+
+    /**
+     * @member {Url} url
+     * @memberof Book
+     * @private
+     */
+    this.url = undefined!
+
+    /**
+     * @member {Path} path
+     * @memberof Book
+     * @private
+     */
+    this.path = undefined
+
+    /**
+     * @member {boolean} archived
+     * @memberof Book
+     * @private
+     */
+    this.archived = false
+
+    /**
+     * @member {Archive} archive
+     * @memberof Book
+     * @private
+     */
+    this.archive = undefined
+
+    /**
+     * @member {Store} storage
+     * @memberof Book
+     * @private
+     */
+    this.storage = undefined
+
+    /**
+     * @member {Resources} resources
+     * @memberof Book
+     * @private
+     */
+    this.resources = undefined!
+
+    /**
+     * @member {Rendition} rendition
+     * @memberof Book
+     * @private
+     */
+    this.rendition = undefined
+
+    /**
+     * @member {Container} container
+     * @memberof Book
+     * @private
+     */
+    this.container = undefined
+
+    /**
+     * @member {Packaging} packaging
+     * @memberof Book
+     * @private
+     */
+    this.packaging = undefined!
+
+    /**
+     * @member {DisplayOptions} displayOptions
+     * @memberof DisplayOptions
+     * @private
+     */
+    this.displayOptions = undefined
+
+    // this.toc = undefined;
+    if (this.settings.store) {
+      this.store(this.settings.store)
+    }
+
+    if (url) {
+      // open() already surfaces the cause, rejects opening/loading and emits
+      // OPEN_FAILED; swallow the rejection here so the auto-open doesn't
+      // produce an unhandled promise rejection.
+      this.open(url as string | ArrayBuffer | Blob, this.settings.openAs).catch(
+        () => {},
+      )
+    }
+  }
+
+  /**
+   * Open a epub or url
+   * @param {string | ArrayBuffer} input Url, Path or ArrayBuffer
+   * @param {string} [what="binary", "base64", "epub", "opf", "json", "directory"] force opening as a certain type
+   * @returns {Promise} of when the book has been loaded
+   * @example book.open("/path/to/book.epub")
+   */
+  open(input: string | ArrayBuffer | Blob, what?: string): Promise<void> {
+    // Route both synchronous setup throws (e.g. "JSZip lib not loaded" from
+    // Archive construction) and async open-chain failures through one handler:
+    // preserve the real cause, reject the pending open/load promises so
+    // `book.opened`/`book.ready` fail fast instead of hanging, and emit OPEN_FAILED.
+    const fail = (error: unknown): EpubError => {
+      const cause = error instanceof Error ? error : new Error(String(error))
+      // Preserve the HTTP status the requester attached (e.g. 404) so callers
+      // awaiting `book.opened` still see it after the wrap.
+      const status = cause instanceof EpubError ? cause.status : undefined
+      let inputLabel: string
+      if (typeof input === 'string') {
+        inputLabel = input.length > 200 ? input.slice(0, 200) + '…' : input
+      } else if (isArrayBufferInput(input)) {
+        inputLabel = 'ArrayBuffer(' + input.byteLength + ' bytes)'
+      } else {
+        inputLabel =
+          'Blob(' +
+          (input.type || 'application/octet-stream') +
+          ', ' +
+          input.size +
+          ' bytes)'
+      }
+      const err = new EpubError(
+        'Cannot load book at ' + inputLabel + ': ' + cause.message,
+        status,
+        cause,
+      )
+      this.opening.reject(err)
+      ;(Object.keys(this.loading) as (keyof Book['loading'])[]).forEach(
+        (key) => {
+          this.loading[key].reject(err)
+        },
+      )
+      this.emit(EVENTS.BOOK.OPEN_FAILED, err)
+      return err
+    }
+
+    let opening
+    try {
+      const type = what || this.determineType(input)
+
+      if (type === INPUT_TYPE.BINARY) {
+        this.archived = true
+        this.url = new Url('/', '')
+        opening = this.openEpub(input)
+      } else if (type === INPUT_TYPE.BASE64) {
+        this.archived = true
+        this.url = new Url('/', '')
+        opening = this.openEpub(input, type)
+      } else if (type === INPUT_TYPE.EPUB) {
+        this.archived = true
+        this.url = new Url('/', '')
+        opening = this.request(
+          input as string,
+          'binary',
+          this.settings.requestCredentials,
+          this.settings.requestHeaders,
+        ).then((result) => this.openEpub(result as string | ArrayBuffer))
+      } else if (type === INPUT_TYPE.OPF) {
+        this.url = new Url(input as string)
+        opening = this.openPackaging(this.url.Path.toString())
+      } else if (type === INPUT_TYPE.MANIFEST) {
+        this.url = new Url(input as string)
+        opening = this.openManifest(this.url.Path.toString())
+      } else {
+        this.url = new Url(input as string)
+        opening = this.openContainer(CONTAINER_PATH).then((result) =>
+          this.openPackaging(result),
+        )
+      }
+    } catch (error) {
+      return Promise.reject(fail(error))
+    }
+
+    return opening.catch((error) => {
+      throw fail(error)
+    })
+  }
+
+  /**
+   * Open an archived epub
+   * @private
+   * @param  {binary} data
+   * @param  {string} [encoding]
+   * @return {Promise}
+   */
+  openEpub(
+    data: string | ArrayBuffer | Blob,
+    encoding?: string,
+  ): Promise<void> {
+    return this.unarchive(data, encoding || this.settings.encoding)
+      .then(() => {
+        return this.openContainer(CONTAINER_PATH)
+      })
+      .then((packagePath) => {
+        return this.openPackaging(packagePath)
+      })
+  }
+
+  /**
+   * Open the epub container
+   * @private
+   * @param  {string} url
+   * @return {string} packagePath
+   */
+  openContainer(url: string): Promise<string> {
+    return this.load(url).then((xml) => {
+      this.container = new Container(xml as Document)
+      return this.resolve(this.container.packagePath!)
+    })
+  }
+
+  /**
+   * Open the Open Packaging Format Xml
+   * @private
+   * @param  {string} url
+   * @return {Promise}
+   */
+  openPackaging(url: string): Promise<void> {
+    this.path = new Path(url)
+    return this.load(url).then((xml) => {
+      this.packaging = new Packaging(xml as Document)
+      return this.unpack(this.packaging)
+    })
+  }
+
+  /**
+   * Open the manifest JSON
+   * @private
+   * @param  {string} url
+   * @return {Promise}
+   */
+  openManifest(url: string): Promise<void> {
+    this.path = new Path(url)
+    return this.load(url).then((json) => {
+      this.packaging = new Packaging()
+      this.packaging.load(json as WebPubManifest)
+      return this.unpack(this.packaging)
+    })
+  }
+
+  /**
+   * Load a resource from the Book
+   * @param  {string} path path to the resource to load
+   * @param  {string} [type] parse type to use, overriding the path extension
+   * @return {Promise}     returns a promise with the requested resource
+   */
+  load(
+    path: string,
+    type?: string,
+    withCredentials?: boolean,
+    headers?: Record<string, string>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const resolved = this.resolve(path)
+    if (this.archived) {
+      return this.archive!.request(resolved, type)
+    } else {
+      return this.request(
+        resolved,
+        type,
+        withCredentials ?? this.settings.requestCredentials,
+        headers ?? this.settings.requestHeaders,
+        signal,
+      )
+    }
+  }
+
+  /**
+   * Resolve a path to it's absolute position in the Book
+   * @param  {string} path
+   * @param  {boolean} [absolute] force resolving the full URL
+   * @return {string}          the resolved path string
+   */
+  resolve(path: string, absolute?: boolean): string {
+    if (!path) {
+      return ''
+    }
+    let resolved = path
+    const isAbsolute = path.includes('://')
+
+    if (isAbsolute) {
+      return path
+    }
+
+    if (this.path) {
+      resolved = this.path.resolve(path)
+    }
+
+    if (absolute !== false && this.url) {
+      resolved = this.url.resolve(resolved)
+    }
+
+    return resolved
+  }
+
+  /**
+   * Get a canonical link to a path
+   * @param  {string} path
+   * @return {string} the canonical path string
+   */
+  canonical(path: string): string {
+    let url = path
+
+    if (!path) {
+      return ''
+    }
+
+    if (this.settings.canonical) {
+      url = this.settings.canonical(path)
+    } else {
+      url = this.resolve(path, true)
+    }
+
+    return url
+  }
+
+  /**
+   * Determine the type of they input passed to open
+   * @private
+   * @param  {string} input
+   * @return {string}  binary | directory | epub | opf
+   */
+  determineType(input: string | ArrayBuffer | Blob): string | undefined {
+    let extension
+
+    if (this.settings.encoding === 'base64') {
+      return INPUT_TYPE.BASE64
+    }
+
+    if (typeof input !== 'string') {
+      return INPUT_TYPE.BINARY
+    }
+
+    const url = new Url(input)
+    const path = url.path()
+    extension = path.extension
+
+    // If there's a search string, remove it before determining type
+    if (extension) {
+      extension = extension.replace(/\?.*$/, '')
+    }
+
+    if (!extension) {
+      return INPUT_TYPE.DIRECTORY
+    }
+
+    if (extension === 'epub') {
+      return INPUT_TYPE.EPUB
+    }
+
+    if (extension === 'opf') {
+      return INPUT_TYPE.OPF
+    }
+
+    if (extension === 'json') {
+      return INPUT_TYPE.MANIFEST
+    }
+
+    return undefined
+  }
+
+  /**
+   * unpack the contents of the Books packaging
+   * @private
+   * @param {Packaging} packaging object
+   */
+  unpack(packaging: Packaging): void {
+    this.package = packaging
+
+    if (this.packaging.metadata.layout === '') {
+      // rendition:layout not set - check display options if book is pre-paginated
+      this.load(this.url.resolve(IBOOKS_DISPLAY_OPTIONS_PATH))
+        .then((xml) => {
+          this.displayOptions = new DisplayOptions(xml as Document)
+          this.loading.displayOptions.resolve(this.displayOptions)
+        })
+        .catch((_err) => {
+          this.displayOptions = new DisplayOptions()
+          this.loading.displayOptions.resolve(this.displayOptions)
+        })
+    } else {
+      this.displayOptions = new DisplayOptions()
+      this.loading.displayOptions.resolve(this.displayOptions)
+    }
+
+    this.spine.unpack(
+      this.packaging,
+      (path: string, absolute?: boolean): string =>
+        this.resolve(path, absolute),
+      (path: string): string => this.canonical(path),
+    )
+
+    // Fixed layout may be declared by rendition:layout or, failing that, by
+    // the iBooks display options loaded above.
+    this.loaded.displayOptions.then((displayOptions) => {
+      this.locations.layout =
+        displayOptions.fixedLayout === 'true'
+          ? 'pre-paginated'
+          : this.packaging.metadata.layout
+    })
+
+    this.resources = new Resources(this.packaging.manifest, {
+      archive: this.archive,
+      resolver: (path: string, absolute?: boolean): string =>
+        this.resolve(path, absolute),
+      request: (path: string, type?: string): Promise<unknown> =>
+        this.request(path, type),
+      replacements:
+        this.settings.replacements || (this.archived ? 'blobUrl' : 'base64'),
+    })
+
+    this.loadNavigation(this.packaging).then(() => {
+      // this.toc = this.navigation.toc;
+      this.loading.navigation.resolve(this.navigation)
+    })
+
+    if (this.packaging.coverPath) {
+      this.cover = this.resolve(this.packaging.coverPath)
+    }
+    // Resolve promises
+    this.loading.manifest.resolve(this.packaging.manifest)
+    this.loading.metadata.resolve(this.packaging.metadata)
+    this.loading.spine.resolve(this.spine)
+    this.loading.cover.resolve(this.cover)
+    this.loading.resources.resolve(this.resources)
+    this.loading.pageList.resolve(this.pageList)
+
+    this.isOpen = true
+
+    const effectiveReplacements =
+      this.settings.replacements || (this.archived ? 'blobUrl' : 'none')
+    if (effectiveReplacements !== 'none') {
+      this.replacementsReady = this.replacements().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(err)
+      })
+    }
+
+    // Resolve book opened promise without waiting for replacements
+    Promise.all([this.loaded.displayOptions, this.loaded.navigation]).then(
+      () => {
+        this.opening.resolve(this)
+      },
+    )
+  }
+
+  /**
+   * Load Navigation and PageList from package
+   * @private
+   * @param {Packaging} packaging
+   */
+  loadNavigation(packaging: Packaging): Promise<Navigation> {
+    const navPath = packaging.navPath || packaging.ncxPath
+    const toc = packaging.toc
+
+    // From json manifest
+    if (toc) {
+      return new Promise((resolve, _reject) => {
+        this.navigation = new Navigation(toc)
+
+        if ('pageList' in packaging && packaging.pageList) {
+          this.pageList = new PageList(packaging.pageList as Document) // Web Publication Manifest page lists are not yet supported
+        }
+
+        resolve(this.navigation)
+      })
+    }
+
+    if (!navPath) {
+      return new Promise((resolve, _reject) => {
+        this.navigation = new Navigation()
+        this.pageList = new PageList()
+
+        resolve(this.navigation)
+      })
+    }
+
+    return this.load(navPath, 'xml').then((xml) => {
+      this.navigation = new Navigation(xml as Document)
+      this.pageList = new PageList(xml as Document)
+      return this.navigation
+    })
+  }
+
+  /**
+   * Gets a Section of the Book from the Spine
+   * Alias for `book.spine.get`
+   * @param {string} target
+   * @return {Section}
+   */
+  section(target: string | number): Section | null {
+    return this.spine.get(target)
+  }
+
+  /**
+   * Sugar to render a book to an element
+   * @param  {element | string} element element or string to add a rendition to
+   * @param  {object} [options]
+   * @return {Rendition}
+   */
+  renderTo(
+    element: HTMLElement | string,
+    options?: RenditionOptions,
+  ): Rendition {
+    this.rendition = new Rendition(this, options)
+    this.rendition.attachTo(element)
+
+    return this.rendition
+  }
+
+  /**
+   * Set if request should use withCredentials
+   * @param {boolean} credentials
+   */
+  setRequestCredentials(credentials: boolean): void {
+    this.settings.requestCredentials = credentials
+  }
+
+  /**
+   * Set headers request should use
+   * @param {object} headers
+   */
+  setRequestHeaders(headers: Record<string, string>): void {
+    this.settings.requestHeaders = headers
+  }
+
+  /**
+   * Unarchive a zipped epub
+   * @private
+   * @param  {binary} input epub data
+   * @param  {string} [encoding]
+   * @return {Archive}
+   */
+  unarchive(
+    input: string | ArrayBuffer | Blob,
+    encoding?: string,
+  ): Promise<JSZip> {
+    this.archive = new Archive()
+    return this.archive.open(input, encoding === 'base64')
+  }
+
+  /**
+   * Store the epubs contents
+   * @private
+   * @param  {binary} input epub data
+   * @param  {string} [encoding]
+   * @return {Store}
+   */
+  store(name: string | boolean): Store {
+    // Use "blobUrl" or "base64" for replacements
+    const replacementsSetting =
+      this.settings.replacements && this.settings.replacements !== 'none'
+        ? this.settings.replacements
+        : undefined
+    // Save original url
+    const originalUrl = this.url
+    // Save original request method
+    const requester =
+      this.settings.requestMethod ||
+      ((url: string, type?: string): Promise<unknown> => request(url, type))
+    // Create new Store
+    this.storage = new Store(
+      name as string,
+      requester,
+      (path: string, absolute?: boolean): string =>
+        this.resolve(path, absolute),
+    )
+    // Replace request method to go through store
+    this.request = (path: string, type?: string): Promise<unknown> =>
+      this.storage!.request(path, type)
+
+    this.opened.then(() => {
+      if (this.archived) {
+        this.storage!.requester = (
+          path: string,
+          type?: string,
+        ): Promise<unknown> => this.archive!.request(path, type)
+      }
+      // Substitute hook
+      const substituteResources = (output: string, section: Section): void => {
+        section.output = this.resources.substitute(output, section.url)
+      }
+
+      // Set to use replacements
+      this.resources.settings!.replacements = replacementsSetting || 'blobUrl'
+      // Create replacement urls
+      this.resources.replacements().then(() => {
+        return this.resources.replaceCss()
+      })
+
+      this.storage!.on('offline', () => {
+        // Remove url to use relative resolving for hrefs
+        this.url = new Url('/', '')
+        // Add hook to replace resources in contents
+        this.spine.hooks.serialize.register(substituteResources)
+      })
+
+      this.storage!.on('online', () => {
+        // Restore original url
+        this.url = originalUrl
+        // Remove hook
+        this.spine.hooks.serialize.deregister(substituteResources)
+      })
+    })
+
+    return this.storage
+  }
+
+  /**
+   * Get the cover url
+   * @return {Promise<?string>} coverUrl
+   */
+  coverUrl(): Promise<string | null> {
+    return this.loaded.cover.then(() => {
+      if (!this.cover) {
+        return null
+      }
+
+      if (this.archived) {
+        return this.archive!.createUrl(this.cover)
+      } else {
+        return this.cover
+      }
+    })
+  }
+
+  /**
+   * Load replacement urls
+   * @private
+   * @return {Promise} completed loading urls
+   */
+  replacements(): Promise<void> {
+    // Capture the resource owner. Book.destroy() clears `this.resources`, but
+    // an archive decompression already in flight can still settle afterwards.
+    // Resources itself rejects late publication and revokes created blobs.
+    const resources = this.resources
+    const ready: Promise<void> = resources
+      .replacements()
+      .then(() => resources.replaceCss())
+      .then(() => undefined)
+
+    this.spine.hooks.serialize.register((output: string, section: Section) => {
+      return ready.then(() => {
+        // Cancellation may unload the Section while archive/CSS replacement
+        // work is pending. Do not resurrect output for a released view.
+        if (section.output === output) {
+          section.output = resources.substitute(output, section.url)
+        }
+      })
+    })
+
+    return ready
+  }
+
+  /**
+   * Find a DOM Range for a given CFI Range
+   * @param  {EpubCFI} cfiRange a epub cfi range
+   * @return {Promise}
+   */
+  getRange(cfiRange: string): Promise<Range> {
+    const cfi = new EpubCFI(cfiRange)
+    const item = this.spine.get(cfi.spinePos)
+    const _request = (path: string): Promise<unknown> => this.load(path)
+    if (!item) {
+      return new Promise((resolve, reject) => {
+        reject('CFI could not be found')
+      })
+    }
+    return item.load(_request).then(function (_contents: Element): Range {
+      const range = cfi.toRange(item!.document)
+      return range!
+    })
+  }
+
+  /**
+   * Generates the Book Key using the identifier in the manifest or other string provided
+   * @param  {string} [identifier] to use instead of metadata identifier
+   * @return {string} key
+   */
+  key(identifier?: string): string {
+    const ident =
+      identifier || this.packaging.metadata.identifier || this.url.filename
+    return `epubjs:${EPUBJS_VERSION}:${ident}`
+  }
+
+  /**
+   * Destroy the Book and all associated objects
+   */
+  destroy(): void {
+    this.opened = undefined!
+    this.loading = undefined!
+    this.loaded = undefined!
+    this.ready = undefined!
+    this.replacementsReady = undefined
+
+    this.isOpen = false
+    this.isRendered = false
+
+    // Stop active queues, presentation hooks and iframe loads before releasing
+    // the Sections, archive and blob URLs they may still be using. Reversing
+    // this order allowed a late render callback to observe a half-destroyed
+    // book when a tab was closed during chapter loading.
+    this.rendition && this.rendition.destroy()
+    this.spine && this.spine.destroy()
+    this.locations && this.locations.destroy()
+    this.canonicalLocations && this.canonicalLocations.clearPositionCache()
+    this.pageList && this.pageList.destroy()
+    this.archive && this.archive.destroy()
+    this.resources && this.resources.destroy()
+    this.container && this.container.destroy()
+    this.packaging && this.packaging.destroy()
+    this.displayOptions && this.displayOptions.destroy()
+
+    if (this.storage) {
+      this.storage.destroy()
+      this.storage = undefined
+    }
+
+    this.spine = undefined!
+    this.locations = undefined!
+    this.canonicalLocations = undefined!
+    this.pageList = undefined!
+    this.archive = undefined
+    this.resources = undefined!
+    this.container = undefined
+    this.packaging = undefined!
+    this.rendition = undefined
+
+    this.navigation = undefined!
+    this.url = undefined!
+    this.path = undefined
+    this.archived = false
+  }
+}
+
+//-- Enable binding events to book
+EventEmitter(Book.prototype)
+
+export default Book

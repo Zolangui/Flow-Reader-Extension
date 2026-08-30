@@ -1,15 +1,18 @@
 import { v4 as uuidv4 } from 'uuid'
 
-import ePub, { Book } from '@flow/epubjs'
+import type { Book } from '@flow/epubjs'
 
-import { BookRecord, db } from './db'
+import {
+  BookRecord,
+  db,
+  isCacheableLocalFileRevision,
+  localFileRevision,
+} from './db'
+import { fileToEpub, readBlob } from './lib/epub-file'
 import { mapExtToMimes } from './mime'
 import { unpack } from './sync'
 
-export async function fileToEpub(file: File) {
-  const data = await file.arrayBuffer()
-  return ePub(data)
-}
+export { fileToEpub, readBlob } from './lib/epub-file'
 
 export async function handleFiles(files: Iterable<File>) {
   const books = await db?.books.toArray()
@@ -50,70 +53,76 @@ export async function addBook(file: File) {
     size: file.size,
     metadata,
     createdAt: Date.now(),
-    definitions: [],
     annotations: [],
   }
-  db?.books.add(book)
-  addFile(book.id, file, epub)
+  await db?.books.add(book)
+  await addFile(book.id, file, epub)
   return book
 }
 
 export async function addFile(id: string, file: File, epub?: Book) {
-  db?.files.add({ id, file })
+  const revisionPromise = localFileRevision(file)
+  let openedBook = epub
+  let manualCoverUrl: string | undefined
 
-  if (!epub) {
-    epub = await fileToEpub(file)
-  }
-
-  let url = await epub.coverUrl()
-
-  // Fallback: Try to find cover manually if epub.js fails
-  if (!url && (epub.archive as any)?.zip) {
-    console.warn('epub.coverUrl() failed, attempting manual fallback...')
-    const zip = (epub.archive as any).zip
-    const files = Object.keys(zip.files)
-    // Common cover filenames
-    const coverCandidates = [
-      'cover.jpg',
-      'cover.jpeg',
-      'cover.png',
-      'OEBPS/cover.jpg',
-      'OPS/cover.jpg',
-    ]
-
-    // 1. Try exact candidates
-    let match = coverCandidates.find((c) => files.includes(c))
-
-    // 2. Try fuzzy match for "cover" + image extension
-    if (!match) {
-      match = files.find(
-        (f) =>
-          f.toLowerCase().includes('cover') && /\.(jpg|jpeg|png)$/i.test(f),
-      )
+  try {
+    if (!openedBook) {
+      openedBook = await fileToEpub(file)
     }
 
-    if (match) {
-      console.log(`Found cover via fallback: ${match}`)
-      const file = zip.file(match)
-      if (file) {
-        const blob = await file.async('blob')
-        url = URL.createObjectURL(blob)
+    const revision = await revisionPromise
+    await db?.files.add({
+      id,
+      file,
+      ...(isCacheableLocalFileRevision(revision)
+        ? { publicationRevision: revision }
+        : {}),
+    })
+
+    let url = await openedBook.coverUrl()
+
+    // Fallback: Try to find cover manually if epub.js fails
+    if (!url && (openedBook.archive as any)?.zip) {
+      console.warn('epub.coverUrl() failed, attempting manual fallback...')
+      const zip = (openedBook.archive as any).zip
+      const files = Object.keys(zip.files)
+      // Common cover filenames
+      const coverCandidates = [
+        'cover.jpg',
+        'cover.jpeg',
+        'cover.png',
+        'OEBPS/cover.jpg',
+        'OPS/cover.jpg',
+      ]
+
+      // 1. Try exact candidates
+      let match = coverCandidates.find((c) => files.includes(c))
+
+      // 2. Try fuzzy match for "cover" + image extension
+      if (!match) {
+        match = files.find(
+          (f) =>
+            f.toLowerCase().includes('cover') && /\.(jpg|jpeg|png)$/i.test(f),
+        )
+      }
+
+      if (match) {
+        console.log(`Found cover via fallback: ${match}`)
+        const coverFile = zip.file(match)
+        if (coverFile) {
+          const blob = await coverFile.async('blob')
+          manualCoverUrl = URL.createObjectURL(blob)
+          url = manualCoverUrl
+        }
       }
     }
+
+    const cover = url && (await toDataUrl(url))
+    await db?.covers.add({ id, cover })
+  } finally {
+    if (manualCoverUrl) URL.revokeObjectURL(manualCoverUrl)
+    openedBook?.destroy()
   }
-
-  const cover = url && (await toDataUrl(url))
-  db?.covers.add({ id, cover })
-}
-
-export function readBlob(fn: (reader: FileReader) => void) {
-  return new Promise<string>((resolve) => {
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      resolve(reader.result as string)
-    })
-    fn(reader)
-  })
 }
 
 async function toDataUrl(url: string) {

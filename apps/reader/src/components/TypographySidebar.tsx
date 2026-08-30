@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import React, { useState } from 'react'
 
-import { RenditionSpread } from '@flow/epubjs/types/rendition'
+import { RenditionSpread } from '@flow/epubjs'
 
 import { useSettings } from '../state'
 

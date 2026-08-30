@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react'
 
-import { compositeColors } from '@flow/reader/color'
+import {
+  normalizeReaderBackgroundLevel,
+  readerBackgroundClass,
+  resolveReaderBackgroundColor,
+  type ReaderBackgroundLevel,
+} from '@flow/reader/lib/theme-colors'
 import { useSettings } from '@flow/reader/state'
 
 import { useColorScheme } from './useColorScheme'
@@ -12,7 +17,7 @@ export function useBackground() {
   const rawTheme = useTheme()
 
   const setBackground = useCallback(
-    (background: number) => {
+    (background: ReaderBackgroundLevel) => {
       setSettings((prev) => ({
         ...prev,
         theme: {
@@ -24,36 +29,16 @@ export function useBackground() {
     [setSettings],
   )
 
-  // [-1, 1, 3, 5]
-  const level = theme?.background ?? -1
+  const level = normalizeReaderBackgroundLevel(theme?.background)
 
-  const background = useMemo(() => {
-    if (dark) return 'bg-default'
-
-    if (level > 0) return `bg-surface${level}`
-
-    return 'bg-default'
-  }, [dark, level])
+  const background = useMemo(
+    () => readerBackgroundClass(Boolean(dark), level),
+    [dark, level],
+  )
 
   const backgroundColor = useMemo(() => {
     if (dark === undefined) return undefined
-    if (rawTheme === undefined) return undefined
-
-    const surfaceMap: Record<number, number> = {
-      1: 0.05,
-      2: 0.08,
-      3: 0.11,
-      4: 0.12,
-      5: 0.14,
-    }
-
-    const { surface, primary } = rawTheme.schemes.light
-
-    return dark
-      ? '#24292e'
-      : level < 0
-      ? '#fff'
-      : compositeColors(surface, primary, surfaceMap[level]!)
+    return resolveReaderBackgroundColor(dark, level, rawTheme)
   }, [dark, level, rawTheme])
 
   useEffect(() => {

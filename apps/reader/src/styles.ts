@@ -6,6 +6,11 @@ import { Settings } from './state'
 import { keys } from './utils'
 
 export const activeClass = 'bg-primary70'
+export const LIGHT_READER_TEXT_COLOR = '#3f484a'
+export const DARK_READER_TEXT_COLOR = '#bfc8ca'
+export const LIGHT_READER_LINK_COLOR = '#1e40af'
+export const DARK_READER_LINK_COLOR = '#93c5fd'
+export const READER_LINK_COLOR_PROPERTY = '--lumen-reader-link-color'
 export const defaultStyle = {
   html: {
     padding: '0 !important',
@@ -22,7 +27,7 @@ export const defaultStyle = {
     height: '100% !important',
   },
   'a:any-link': {
-    color: '#3b82f6 !important',
+    color: `var(${READER_LINK_COLOR_PROPERTY}, ${LIGHT_READER_LINK_COLOR})`,
     'text-decoration': 'none !important',
   },
   '::selection': {
@@ -49,39 +54,95 @@ enum Style {
   Custom = 'custom',
 }
 
+export type ReaderContentLayout = 'reflowable' | 'pre-paginated'
+
+// A visible Contents can be styled again after its exact section metadata was
+// used by the pre-pagination hook. Remember that decision so an intermediate
+// render, while BookTab is still publishing `sections`, cannot accidentally
+// apply reflowable typography to a fixed-layout iframe.
+const contentLayoutByDocument = new WeakMap<Document, ReaderContentLayout>()
+
+function normalizedTextScale(zoom: number | undefined): number | undefined {
+  if (!Number.isFinite(zoom) || zoom === undefined || zoom <= 0)
+    return undefined
+  return Math.abs(zoom - 1) < 0.0001 ? undefined : zoom
+}
+
+function scaleCssLength(value: string, scale: number): string {
+  const match = value
+    .trim()
+    .match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(px|pt|pc|in|cm|mm|q|em|rem|%)$/i)
+  if (!match) return value
+  const amount = Number(match[1]) * scale
+  return `${Number(amount.toFixed(4))}${match[2]}`
+}
+
+/**
+ * Build the reader stylesheet without flattening the publication's type
+ * hierarchy. EPUB body classes commonly choose a different base size for each
+ * spine item; setting the root and body establishes one user-selected body
+ * size while relative `em`/`rem` headings, notes and quotations keep their
+ * intended proportions.
+ *
+ * Reader-only controls (`spread` and `contentWidthPercent`) are not emitted as
+ * arbitrary CSS declarations. Reflowable `zoom` becomes a native root font
+ * size before pagination; fixed-layout scaling remains owned by the engine.
+ */
+export function buildCustomStyleCss(
+  settings: Settings,
+  layout: ReaderContentLayout = 'reflowable',
+): string {
+  const { fontSize, fontFamily, fontWeight, lineHeight } = settings
+  const textScale =
+    layout === 'reflowable' ? normalizedTextScale(settings.zoom) : undefined
+  const scaledFontSize =
+    fontSize && textScale ? scaleCssLength(fontSize, textScale) : fontSize
+  const rootFontSize =
+    scaledFontSize ??
+    (textScale ? `${Number((textScale * 100).toFixed(4))}%` : '')
+
+  const rootTypography = rootFontSize
+    ? `html {
+      ${mapToCss({ fontSize: rootFontSize })}
+    }
+    body {
+      ${mapToCss({ fontSize: '1rem' })}
+    }`
+    : ''
+
+  const explicitReaderTypography = mapToCss({
+    fontFamily,
+    fontWeight,
+    lineHeight,
+  })
+  const bodyTypography = explicitReaderTypography
+    ? `a, article, cite, div, li, p, pre, span, table, body {
+      ${explicitReaderTypography}
+    }`
+    : ''
+
+  // Keep a non-empty stylesheet so clearing every preference replaces a
+  // previously injected custom stylesheet instead of leaving it behind.
+  return `/* Lumen reader typography */
+  ${rootTypography}
+  ${bodyTypography}`
+}
+
 export function updateCustomStyle(
   contents: Contents | undefined,
   settings: Settings | undefined,
+  layout?: ReaderContentLayout,
 ) {
   if (!contents || !settings) return
 
-  const { zoom, ...other } = settings
-  let css = `a, article, cite, div, li, p, pre, span, table, body {
-    ${mapToCss(other)}
-  }`
+  if (layout) contentLayoutByDocument.set(contents.document, layout)
+  const effectiveLayout =
+    layout ?? contentLayoutByDocument.get(contents.document) ?? 'reflowable'
 
-  if (zoom) {
-    const body = contents.content as HTMLBodyElement
-    const scale = (p: keyof CSSStyleDeclaration) => ({
-      [p]: `${parseInt(body.style[p] as string) / zoom}px`,
-    })
-    css += `body {
-      ${mapToCss({
-      transformOrigin: 'top left',
-      transform: `scale(${zoom})`,
-      ...scale('width'),
-      ...scale('height'),
-      ...scale('columnWidth'),
-      ...scale('columnGap'),
-      ...scale('paddingTop'),
-      ...scale('paddingBottom'),
-      ...scale('paddingLeft'),
-      ...scale('paddingRight'),
-    })}
-    }`
-  }
-
-  return contents.addStylesheetCss(css, Style.Custom)
+  return contents.addStylesheetCss(
+    buildCustomStyleCss(settings, effectiveLayout),
+    Style.Custom,
+  )
 }
 
 export function lock(l: number, r: number, unit = 'px') {

@@ -46,14 +46,12 @@ const FIREFOX_EMBED_MODEL_ID = (AI_CONFIG as any).embeddingModelFirefox as
 const FIREFOX_EMBED_MODEL_URL = (AI_CONFIG as any).embeddingModelFirefoxUrl as
   | string
   | undefined
-const FIREFOX_EMBED_DIM = (AI_CONFIG as any).embeddingDimFirefox as
-  | number
-  | undefined
+const FIREFOX_EMBED_DIM = AI_CONFIG.embeddingIndexDimFirefox
 const FIREFOX_EMBED_PREFIXES = (AI_CONFIG as any)
   .embeddingModelFirefoxPrefixes as
   | { query?: string; document?: string }
   | undefined
-const FIREFOX_NATIVE_ML_MODEL_ID = 'Xenova/multilingual-e5-base'
+const FIREFOX_NATIVE_ML_MODEL_ID = AI_CONFIG.embeddingModelFirefoxNative
 const FIREFOX_NATIVE_MODEL_ID_PATTERN =
   /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)?$/
 

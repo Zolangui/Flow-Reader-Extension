@@ -1,13 +1,19 @@
-import {
-  redFromArgb,
-  greenFromArgb,
-  blueFromArgb,
-  argbFromRgb,
-  hexFromArgb,
-} from '@material/material-color-utilities'
-
 export function rgbFromArgb(argb: number) {
-  return [redFromArgb, greenFromArgb, blueFromArgb].map((f) => f(argb))
+  return [(argb >> 16) & 255, (argb >> 8) & 255, argb & 255]
+}
+
+function argbFromRgb(red: number, green: number, blue: number) {
+  return (
+    ((255 << 24) |
+      ((red & 255) << 16) |
+      ((green & 255) << 8) |
+      (blue & 255)) >>>
+    0
+  )
+}
+
+function hexFromArgb(argb: number) {
+  return `#${(argb & 0xffffff).toString(16).padStart(6, '0')}`
 }
 
 function compositeChannels(channel1: number, channel2: number, p: number) {

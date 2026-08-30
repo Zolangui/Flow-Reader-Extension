@@ -15,6 +15,7 @@ const withPWA = require('next-pwa')({
 const withTM = require('next-transpile-modules')([
   '@flow/internal',
   '@flow/epubjs',
+  '@flow/epub-engine',
   '@material/material-color-utilities',
   'voy-search',
   '@wllama/wllama',

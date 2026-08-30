@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useCallback, useRef, useState } from 'react'
 
-import { RenditionSpread } from '@flow/epubjs/types/rendition'
+import { RenditionSpread } from '@flow/epubjs'
 import { useAction, useTranslation } from '@flow/reader/hooks'
 import { reader, useReaderSnapshot } from '@flow/reader/models'
 import { TypographyConfiguration, useSettings } from '@flow/reader/state'

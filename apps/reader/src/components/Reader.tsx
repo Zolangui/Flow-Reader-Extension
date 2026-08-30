@@ -1,12 +1,26 @@
 import { useEventListener } from '@literal-ui/hooks'
 import clsx from 'clsx'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { PhotoSlider } from 'react-photo-view'
 import { useSetRecoilState } from 'recoil'
 import useTilg from 'tilg'
 import { useSnapshot } from 'valtio'
 
-import { RenditionSpread } from '@flow/epubjs/types/rendition'
+import {
+  LumenPresentationEngine,
+  RenditionSpread,
+  sectionLayoutName,
+  type LumenPresentationOutcome,
+  type PaginationLifecycleContext,
+  type Rendition,
+} from '@flow/epubjs'
 import { navbarState } from '@flow/reader/state'
 
 import { db } from '../db'
@@ -22,15 +36,27 @@ import {
   useTypography,
   useTranslation,
 } from '../hooks'
+import {
+  DEVELOPMENT_PRESENTATION_MINIMUM_TEXT_CONTRAST,
+  DEVELOPMENT_PRESENTATION_TEST_ENABLED,
+  developmentPresentationConfigurationFingerprint,
+  developmentPresentationGeometryFingerprint,
+  developmentPresentationRenderingFingerprint,
+  type DevelopmentPresentationConfiguration,
+} from '../lib/development-presentation'
+import { applyLegacyDarkRepair } from '../lib/legacy-dark-repair'
 import { BookTab, reader, useReaderSnapshot } from '../models'
 import { isTouchScreen } from '../platform'
-import { updateCustomStyle } from '../styles'
-
 import {
-  getClickedAnnotation,
-  setClickedAnnotation,
-  Annotations,
-} from './Annotation'
+  DARK_READER_LINK_COLOR,
+  DARK_READER_TEXT_COLOR,
+  LIGHT_READER_LINK_COLOR,
+  LIGHT_READER_TEXT_COLOR,
+  READER_LINK_COLOR_PROPERTY,
+  updateCustomStyle,
+} from '../styles'
+
+import { Annotations } from './Annotation'
 import { NewReaderLayout } from './NewReaderLayout'
 import { SearchHighlightLayer } from './SearchHighlightLayer'
 import { TextSelectionMenu } from './TextSelectionMenu'
@@ -131,7 +157,9 @@ function ReaderGroup({ index }: ReaderGroupProps) {
               }
 
               const tabIdx = Number(indexes[1])
-              const tab = reader.removeTab(tabIdx, groupIdx)
+              // Moving a tab keeps its live EPUB instance. Closing it goes
+              // through the default path and releases those resources.
+              const tab = reader.removeTab(tabIdx, groupIdx, false)
               if (tab) tabs.push(tab)
             } else {
               const id = text
@@ -195,19 +223,267 @@ interface BookPaneProps {
 function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   const ref = useRef<HTMLDivElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const restoreFrameRef = useRef<number>()
+  const atlasViewportRef = useRef<{ width: number; height: number }>()
   const citationHighlightTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null)
   const citationHighlightCfiRef = useRef<string | null>(null)
   const typography = useTypography(tab)
+  // Keep the Atlas dependency limited to properties that actually change CSS
+  // pagination. `book` updates on every relocation, so depending on the full
+  // typography object would otherwise cancel a valid background measurement.
+  const layoutAtlasTypography = useMemo(
+    () => ({
+      contentWidthPercent: typography.contentWidthPercent,
+      fontFamily: typography.fontFamily,
+      fontSize: typography.fontSize,
+      fontWeight: typography.fontWeight,
+      lineHeight: typography.lineHeight,
+      spread: typography.spread,
+      zoom: typography.zoom,
+    }),
+    [
+      typography.contentWidthPercent,
+      typography.fontFamily,
+      typography.fontSize,
+      typography.fontWeight,
+      typography.lineHeight,
+      typography.spread,
+      typography.zoom,
+    ],
+  )
   const { dark } = useColorScheme()
   const [background, , backgroundColor] = useBackground()
+  const developmentPresentationConfiguration =
+    useMemo<DevelopmentPresentationConfiguration>(
+      () => ({
+        colorScheme: dark ? 'dark' : 'light',
+        canvasColor: backgroundColor ?? (dark ? '#24292e' : '#ffffff'),
+        typography: layoutAtlasTypography,
+      }),
+      [backgroundColor, dark, layoutAtlasTypography],
+    )
+  const developmentPresentationConfigurationRef = useRef(
+    developmentPresentationConfiguration,
+  )
+  developmentPresentationConfigurationRef.current =
+    developmentPresentationConfiguration
+  const developmentPresentationFingerprint = useMemo(
+    () =>
+      developmentPresentationConfigurationFingerprint(
+        developmentPresentationConfiguration,
+      ),
+    [developmentPresentationConfiguration],
+  )
+  const previousDevelopmentPresentationFingerprintRef = useRef<string>()
   const { contentWidthPercent } = typography
   const [, setAction] = useAction()
 
-  const { iframe, rendition, rendered, container, book } = useSnapshot(tab)
+  const {
+    iframe,
+    rendition,
+    rendered,
+    container,
+    book,
+    canonicalIndexState,
+    layoutAtlasNavigationEpoch,
+  } = useSnapshot(tab)
+  const [restoringPosition, setRestoringPosition] = useState(false)
+  const [layoutAtlasViewport, setLayoutAtlasViewport] = useState<{
+    width: number
+    height: number
+  }>()
+  const [developmentPresentationOutcome, setDevelopmentPresentationOutcome] =
+    useState<LumenPresentationOutcome>()
+  const layoutAtlasTypographyRef = useRef(layoutAtlasTypography)
+  const typographyRef = useRef(typography)
+  typographyRef.current = typography
 
   useTilg()
+
+  // The final typography must exist before both LPE analysis and the first
+  // pagination. Registering it on Rendition's shared lifecycle also makes the
+  // detached Atlas measure exactly the same styled DOM as the visible reader.
+  useLayoutEffect(() => {
+    if (!rendition) return
+    const prepareTypography = (context: PaginationLifecycleContext) => {
+      const layout =
+        sectionLayoutName(context.section, context.layout.name) ===
+        'pre-paginated'
+          ? 'pre-paginated'
+          : 'reflowable'
+      updateCustomStyle(context.contents, typographyRef.current, layout)
+    }
+    rendition.hooks.preparePagination.register(prepareTypography)
+    return () => {
+      rendition.hooks.preparePagination.deregister(prepareTypography)
+    }
+  }, [rendition])
+
+  // A real-book integration exists only in the dedicated presentation-test
+  // build. The release scripts compile this branch out and the engine itself
+  // remains opt-in by default.
+  useLayoutEffect(() => {
+    if (!DEVELOPMENT_PRESENTATION_TEST_ENABLED || !rendition) return
+
+    let disposed = false
+    const liveRendition = rendition as unknown as Rendition
+    const engine = new LumenPresentationEngine(liveRendition, {
+      resolveGeometryPipelineFingerprint: () =>
+        developmentPresentationGeometryFingerprint(
+          developmentPresentationConfigurationRef.current,
+        ),
+      resolvePolicy: async (context, signal) => {
+        const revision = await tab.resolvePublicationRevision()
+        if (signal?.aborted) {
+          throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+        }
+        const configuration = developmentPresentationConfigurationRef.current
+        return {
+          enabled: true,
+          mode: 'adaptive',
+          colorScheme: configuration.colorScheme,
+          canvasColor: configuration.canvasColor,
+          publicationRevision: revision,
+          analysisFingerprint: 'lumen-reader-presentation-test-v2',
+          renderingContextFingerprint:
+            developmentPresentationRenderingFingerprint(configuration, context),
+          minimumTextContrast: DEVELOPMENT_PRESENTATION_MINIMUM_TEXT_CONTRAST,
+        }
+      },
+      onOutcome: (outcome) => {
+        console.info('[LPE presentation test]', outcome)
+        if (
+          !disposed &&
+          outcome.purpose === 'reader' &&
+          outcome.status !== 'cancelled'
+        ) {
+          setDevelopmentPresentationOutcome(outcome)
+        }
+      },
+    }).attach()
+
+    tab.invalidateLayoutAtlas()
+    return () => {
+      disposed = true
+      engine.detach()
+      tab.invalidateLayoutAtlas()
+    }
+  }, [rendition, tab])
+
+  // Re-run only the visible section when an explicit presentation input
+  // changes. Atlas is invalidated separately and will reuse the same lifecycle.
+  useEffect(() => {
+    if (!DEVELOPMENT_PRESENTATION_TEST_ENABLED || !active || !rendition) return
+    const previous = previousDevelopmentPresentationFingerprintRef.current
+    previousDevelopmentPresentationFingerprintRef.current =
+      developmentPresentationFingerprint
+    if (
+      previous === undefined ||
+      previous === developmentPresentationFingerprint
+    ) {
+      return
+    }
+
+    setDevelopmentPresentationOutcome(undefined)
+    tab.invalidateLayoutAtlas()
+    void (rendition as unknown as Rendition)
+      .redisplay(tab.readingLocationCfi)
+      .catch((error) => {
+        console.error('Unable to refresh Adaptive presentation test:', error)
+      })
+  }, [active, developmentPresentationFingerprint, rendition, tab])
+
+  // Mark only the visible tab as eligible to persist locations. This avoids
+  // the zero-sized reflow from a hidden iframe changing a book's saved CFI,
+  // without suppressing the initial `relocated` event that removes loading.
+  useLayoutEffect(() => {
+    tab.setActive(Boolean(active))
+
+    if (!active || !rendition) {
+      setRestoringPosition(false)
+      return () => tab.setActive(false)
+    }
+
+    let cancelled = false
+    // This state update is deliberately in a layout effect: React commits it
+    // before paint, so the old iframe page never flashes on tab return.
+    setRestoringPosition(true)
+
+    // Preserve the intended target before any delayed relocation from a
+    // hidden/zero-sized rendition can replace the tab's latest CFI.
+    const restoreCfi = tab.readingLocationCfi
+    const restoreNavigationIntent = tab.navigationIntent
+    const restoreIsCurrent = () =>
+      !cancelled && tab.navigationIntent === restoreNavigationIntent
+
+    // epub.ts creates `manager` asynchronously. Waiting for `started` makes
+    // the first book reliable too; checking `manager` only once meant a tab
+    // could remain blank until another tab selection retriggered this effect.
+    const started = (rendition as unknown as { started?: Promise<void> })
+      .started
+    void Promise.resolve(started)
+      .then(() => {
+        if (!restoreIsCurrent() || !rendition.manager) {
+          if (!cancelled) setRestoringPosition(false)
+          return
+        }
+
+        // Let the browser deliver the hidden-to-visible ResizeObserver pass
+        // first. Its stale display then stays behind the invisible reader;
+        // our CFI display is queued afterwards and is the one users see.
+        restoreFrameRef.current = window.requestAnimationFrame(() => {
+          if (!restoreIsCurrent()) {
+            if (!cancelled) setRestoringPosition(false)
+            return
+          }
+          restoreFrameRef.current = window.requestAnimationFrame(() => {
+            if (!restoreIsCurrent() || !rendition.manager) {
+              if (!cancelled) setRestoringPosition(false)
+              return
+            }
+
+            const el = ref.current
+            if (!el || el.clientWidth <= 0 || el.clientHeight <= 0) {
+              if (!cancelled) setRestoringPosition(false)
+              return
+            }
+
+            try {
+              // Restore atomically: a resize normally re-displays the last
+              // location, which could briefly expose an old page before the
+              // intended CFI is displayed.
+              void rendition
+                .restore(restoreCfi, el.clientWidth, el.clientHeight)
+                ?.catch((error) => {
+                  console.error('Error restoring reading position:', error)
+                })
+                .finally(() => {
+                  restoreFrameRef.current = window.requestAnimationFrame(() => {
+                    if (!cancelled) setRestoringPosition(false)
+                  })
+                })
+            } catch (error) {
+              console.error('Error restoring reading position:', error)
+              if (!cancelled) setRestoringPosition(false)
+            }
+          })
+        })
+      })
+      .catch((error) => {
+        console.error('Error starting EPUB rendition:', error)
+        if (!cancelled) setRestoringPosition(false)
+      })
+
+    return () => {
+      cancelled = true
+      if (restoreFrameRef.current) {
+        window.cancelAnimationFrame(restoreFrameRef.current)
+      }
+      tab.setActive(false)
+    }
+  }, [active, rendition, tab])
 
   // v3.12: Semantic Jump Highlight Support
   useEffect(() => {
@@ -263,16 +539,20 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       }
 
       try {
-        if (tab.rendition) {
-          const doc = tab.rendition.getContents()[0]?.document
-          if (doc) ensureHighlightStyles(doc)
-        }
         tab.rendition.annotations.add(
           'highlight',
           targetCfi,
           {},
           undefined,
           'glow-highlight',
+          {
+            fill: '#06b6d4',
+            'fill-opacity': '0.28',
+            'mix-blend-mode': 'normal',
+            stroke: '#06b6d4',
+            'stroke-opacity': '0.85',
+            'stroke-width': '1.5',
+          },
         )
         citationHighlightCfiRef.current = targetCfi
         citationHighlightTimerRef.current = setTimeout(() => {
@@ -393,40 +673,6 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       return { normalized: chars.join(''), refs }
     }
 
-    const ensureHighlightStyles = (doc: Document) => {
-      if (doc.getElementById('lumen-highlight-styles')) return
-      const style = doc.createElement('style')
-      style.id = 'lumen-highlight-styles'
-      style.textContent = `
-        @keyframes lumen-shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-        .glow-highlight, .lumen-citation-highlight {
-          background: linear-gradient(110deg, 
-            rgba(6, 182, 212, 0.1) 0%, 
-            rgba(6, 182, 212, 0.25) 50%, 
-            rgba(6, 182, 212, 0.1) 100%
-          ) !important;
-          background-size: 200% 100% !important;
-          animation: lumen-shimmer 3s linear infinite !important;
-          border-bottom: 2px solid rgba(6, 182, 212, 0.8) !important;
-          border-radius: 3px !important;
-          box-shadow: 0 2px 8px rgba(6, 182, 212, 0.15) !important;
-          transition: all 0.3s ease !important;
-        }
-      `
-      doc.head?.appendChild(style)
-    }
-
-    const clearFallbackHighlight = (doc: Document) => {
-      const nodes = doc.querySelectorAll('[data-lumen-citation-highlight="1"]')
-      nodes.forEach((node) => {
-        node.classList.remove('lumen-citation-highlight')
-        node.removeAttribute('data-lumen-citation-highlight')
-      })
-    }
-
     const tryContentFallbackHighlight = (content?: string) => {
       const text = normalizeText(content || '')
       if (!text) return false
@@ -437,9 +683,6 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       const frame = wrapper.querySelector('iframe') as HTMLIFrameElement | null
       const doc = frame?.contentDocument
       if (!doc?.body) return false
-
-      ensureHighlightStyles(doc)
-      clearFallbackHighlight(doc)
 
       const probes = [220, 170, 130, 96, 72, 52]
         .map((len) => text.slice(0, len))
@@ -463,24 +706,16 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
       if (!target) return false
 
-      target.classList.add('lumen-citation-highlight')
-      target.setAttribute('data-lumen-citation-highlight', '1')
+      const range = doc.createRange()
+      range.selectNodeContents(target)
+      let cfi = ''
       try {
-        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        cfi = tab.rangeToCfi(range)
       } catch {
-        // Ignore scroll failures in edge iframe states.
+        return false
       }
-
-      setTimeout(() => {
-        try {
-          target?.classList.remove('lumen-citation-highlight')
-          target?.removeAttribute('data-lumen-citation-highlight')
-        } catch {
-          // Ignore cleanup errors.
-        }
-      }, 5000)
-
-      return true
+      if (!isHighlightableCfi(cfi)) return false
+      return applyGlowCitationHighlight(cfi)
     }
 
     const tryAnchorBasedHighlight = async (
@@ -613,63 +848,6 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
     }
   }, [active, tab, tab.rendition])
 
-  // Function to center content by applying dynamic padding to iframe body
-  const centerContent = useCallback(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper || !rendition) return
-
-    try {
-      const iframe = wrapper.querySelector('iframe')
-      if (!iframe || !iframe.contentDocument) return
-
-      const body = iframe.contentDocument.body
-      if (!body) return
-
-      const wrapperWidth = wrapper.clientWidth
-      const bodyStyle = iframe.contentWindow?.getComputedStyle(body)
-      if (!bodyStyle) return
-
-      // Get actual column count from CSS
-      const columnCount = parseInt(bodyStyle.columnCount)
-      const columnGap = parseFloat(bodyStyle.columnGap || '0')
-
-      // Only apply centering if we have valid column layout
-      if (columnCount && columnCount > 0 && !isNaN(columnCount)) {
-        // Calculate the width of a single column
-        const totalGapWidth = (columnCount - 1) * columnGap
-        const columnWidth = (wrapperWidth - totalGapWidth) / columnCount
-
-        // Calculate total width needed for all columns
-        const totalColumnsWidth = columnCount * columnWidth + totalGapWidth
-
-        // Calculate extra space and apply as margin
-        const extraSpace = wrapperWidth - totalColumnsWidth
-        const margin = Math.max(0, Math.floor(extraSpace / 2))
-
-        // Use margin instead of padding - this doesn't reduce internal width
-        body.style.marginLeft = `${margin}px`
-        body.style.marginRight = `${margin}px`
-
-        console.log('Content centering (margin):', {
-          wrapperWidth,
-          columnCount,
-          columnWidth,
-          columnGap,
-          totalColumnsWidth,
-          extraSpace,
-          margin,
-        })
-      } else {
-        // No columns or invalid config, reset margins
-        body.style.marginLeft = '0px'
-        body.style.marginRight = '0px'
-        console.log('No valid column layout, margins reset')
-      }
-    } catch (error) {
-      console.error('Error centering content:', error)
-    }
-  }, [rendition])
-
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -679,17 +857,24 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
     const observer = new ResizeObserver(() => {
       clearTimeout(timeoutId)
       timeoutId = setTimeout(() => {
-        if (rendition?.manager) {
+        if (active && !restoringPosition && rendition?.manager) {
           try {
             const width = el.clientWidth
             const height = el.clientHeight
-            console.log('Resizing rendition to:', width, height)
-            console.log('WrapperRef width:', wrapperRef.current?.clientWidth)
-            console.log('ContentWidthPercent:', contentWidthPercent)
             if (width > 0 && height > 0) {
+              const previousViewport = atlasViewportRef.current
+              if (
+                !previousViewport ||
+                previousViewport.width !== width ||
+                previousViewport.height !== height
+              ) {
+                // Do not show a previous viewport's total as exact while the
+                // debounced replacement Atlas is being measured.
+                tab.invalidateLayoutAtlas()
+                atlasViewportRef.current = { width, height }
+                setLayoutAtlasViewport({ width, height })
+              }
               rendition.resize(width, height)
-              //Apply centering after resize
-              setTimeout(() => centerContent(), 100)
             }
           } catch (error) {
             console.error('Error resizing rendition:', error)
@@ -704,83 +889,123 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
       observer.disconnect()
       clearTimeout(timeoutId)
     }
-  }, [rendition, contentWidthPercent, centerContent])
+  }, [active, rendition, contentWidthPercent, restoringPosition, tab])
+
+  // A Layout Atlas is local to the exact visible viewport and typography. The
+  // expensive work is debounced until resizing/styles settle; the engine then
+  // measures detached clones, never the visible book section.
+  useEffect(() => {
+    const el = ref.current
+    if (!active || !rendition || !rendered || !el) return
+
+    const width = el.clientWidth
+    const height = el.clientHeight
+    if (width <= 0 || height <= 0) return
+
+    const current = atlasViewportRef.current
+    if (!current || current.width !== width || current.height !== height) {
+      atlasViewportRef.current = { width, height }
+      setLayoutAtlasViewport({ width, height })
+    }
+  }, [active, rendition, rendered])
+
+  useEffect(() => {
+    if (
+      !active ||
+      !rendition ||
+      !rendered ||
+      !layoutAtlasViewport ||
+      canonicalIndexState === 'idle' ||
+      canonicalIndexState === 'indexing'
+    ) {
+      return
+    }
+
+    // Activating an unchanged tab should reuse its completed in-memory Atlas.
+    // Typography changes still invalidate immediately; viewport changes are
+    // handled by the ResizeObserver above.
+    const configurationChanged =
+      layoutAtlasTypographyRef.current !== layoutAtlasTypography
+    if (configurationChanged) {
+      layoutAtlasTypographyRef.current = layoutAtlasTypography
+      tab.invalidateLayoutAtlas()
+    }
+
+    // Canonical source indexing and visual pagination both walk the complete
+    // spine. Never run them together, and start the more expensive iframe job
+    // only after the visible reader has had an idle opportunity. This keeps
+    // the first cover -> text navigation responsive on newly imported books.
+    let idleCallback: number | undefined
+    const measure = () => {
+      void tab.refreshLayoutAtlas({
+        viewport: layoutAtlasViewport,
+        typography: layoutAtlasTypography,
+      })
+    }
+    // An explicit typography/spread choice should consult its local Atlas
+    // cache promptly. The longer delay remains valuable only on initial book
+    // startup, where source indexing and cover rendering have priority.
+    const startDelay = configurationChanged ? 200 : 1200
+    const idleTimeout = configurationChanged ? 500 : 2000
+    const timer = window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === 'function') {
+        idleCallback = window.requestIdleCallback(measure, {
+          timeout: idleTimeout,
+        })
+      } else {
+        measure()
+      }
+    }, startDelay)
+
+    return () => {
+      window.clearTimeout(timer)
+      if (
+        idleCallback !== undefined &&
+        typeof window.cancelIdleCallback === 'function'
+      ) {
+        window.cancelIdleCallback(idleCallback)
+      }
+    }
+  }, [
+    active,
+    canonicalIndexState,
+    layoutAtlasViewport,
+    rendered,
+    rendition,
+    tab,
+    layoutAtlasTypography,
+    layoutAtlasNavigationEpoch,
+  ])
 
   useSync(tab)
 
   const setNavbar = useSetRecoilState(navbarState)
   const mobile = useMobile()
-  const pageCountLayoutSignature = [
-    typography.contentWidthPercent ?? '',
-    typography.fontFamily ?? '',
-    typography.fontSize ?? '',
-    typography.fontWeight ?? '',
-    typography.lineHeight ?? '',
-    typography.spread ?? '',
-    typography.zoom ?? '',
-  ].join('|')
-
-  useEffect(() => {
-    tab.setPageCountLayoutSignature(pageCountLayoutSignature)
-  }, [pageCountLayoutSignature, tab])
 
   const applyCustomStyle = useCallback(() => {
-    const contents = rendition?.getContents()[0]
-    updateCustomStyle(contents, typography)
+    // Fixed-layout spreads can expose more than one Contents instance. Apply
+    // the exact same layout-affecting typography to every visible iframe so a
+    // cached Atlas and the reader cannot diverge on the second page.
+    rendition?.getContents().forEach((contents) => {
+      const section = tab.sections?.[contents.sectionIndex]
+      const sectionLayout = section
+        ? sectionLayoutName(section, rendition.manager?.layout?.name)
+        : undefined
+      const layout = sectionLayout
+        ? sectionLayout === 'pre-paginated'
+          ? 'pre-paginated'
+          : 'reflowable'
+        : undefined
+      updateCustomStyle(contents, typography, layout)
 
-    // Smart Color Inversion for Dark Mode
-    if (contents) {
-      const doc = contents.document
-      const elements = doc.querySelectorAll(
-        'p, span, h1, h2, h3, h4, h5, h6, div, a, li, blockquote',
-      )
+      // The test build must observe LPE in isolation. Running the legacy
+      // inline color scanner afterwards would overwrite the authored branch,
+      // make rollback destructive, and invalidate the experiment.
+      if (DEVELOPMENT_PRESENTATION_TEST_ENABLED) return
 
-      if (dark) {
-        // Dark mode: invert dark colors to light
-        const themeColor = '#bfc8ca' // Light gray for dark mode
-
-        elements.forEach((el: Element) => {
-          const htmlEl = el as HTMLElement
-          const computedStyle = window.getComputedStyle(htmlEl)
-          const color = computedStyle.color
-
-          // Parse RGB
-          const rgb = color.match(/\d+/g)
-          if (rgb && rgb.length >= 3) {
-            const [r, g, b] = rgb.map(Number)
-
-            // Check if color is dark (e.g., close to black)
-            // Threshold can be adjusted, < 100 is a safe bet for "dark text"
-            if (r < 100 && g < 100 && b < 100) {
-              htmlEl.style.setProperty('color', themeColor, 'important')
-            }
-          }
-
-          const backgroundColor = computedStyle.backgroundColor
-          const bgRgb = backgroundColor.match(/\d+/g)
-          if (bgRgb && bgRgb.length >= 3) {
-            const [r, g, b] = bgRgb.map(Number)
-            // If background is light (close to white), make it dark gray
-            // This fixes "white boxes" in dark mode while keeping the box visible
-            if (r > 200 && g > 200 && b > 200) {
-              htmlEl.style.setProperty(
-                'background-color',
-                '#374151', // gray-700
-                'important',
-              )
-            }
-          }
-        })
-      } else {
-        // Light mode: clear any forced color styles to restore original book colors
-        elements.forEach((el: Element) => {
-          const htmlEl = el as HTMLElement
-          htmlEl.style.removeProperty('color')
-          htmlEl.style.removeProperty('background-color')
-        })
-      }
-    }
-  }, [rendition, typography, dark])
+      applyLegacyDarkRepair(contents, Boolean(dark))
+    })
+  }, [rendition, typography, dark, tab])
 
   useEffect(() => {
     tab.onRender = applyCustomStyle
@@ -788,12 +1013,14 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
   useEffect(() => {
     const el = ref.current
-    if (el && !rendition) {
+    if (active && el && !rendition) {
       const width = el.clientWidth
       const height = el.clientHeight
-      tab.render(el, width, height)
+      if (width > 0 && height > 0) {
+        tab.render(el, width, height)
+      }
     }
-  }, [rendition, tab])
+  }, [active, rendition, tab])
 
   useEffect(() => {
     /**
@@ -802,42 +1029,20 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
      * according to the latest layout
      */
     rendition?.spread(typography.spread ?? RenditionSpread.Auto)
-    // Apply centering after spread change
-    setTimeout(() => centerContent(), 200)
-  }, [typography.spread, rendition, centerContent])
-
-  // Apply centering when page turns (rendered changes)
-  useEffect(() => {
-    if (rendered) {
-      console.log('Page rendered, applying centering')
-      setTimeout(() => centerContent(), 100)
-    }
-  }, [rendered, centerContent])
+  }, [typography.spread, rendition])
 
   useEffect(() => applyCustomStyle(), [applyCustomStyle])
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      tab.refreshPageCountEstimate()
-    }, 150)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [
-    tab,
-    rendition,
-    typography.contentWidthPercent,
-    typography.fontFamily,
-    typography.fontSize,
-    typography.fontWeight,
-    typography.lineHeight,
-    typography.spread,
-    typography.zoom,
-  ])
-
-  useEffect(() => {
     if (dark === undefined) return
+    rendition?.themes.override(
+      READER_LINK_COLOR_PROPERTY,
+      dark ? DARK_READER_LINK_COLOR : LIGHT_READER_LINK_COLOR,
+      true,
+    )
+    if (DEVELOPMENT_PRESENTATION_TEST_ENABLED) return
     // set `!important` when in dark mode
-    const color = dark ? '#bfc8ca' : '#3f484a'
+    const color = dark ? DARK_READER_TEXT_COLOR : LIGHT_READER_TEXT_COLOR
     rendition?.themes.override('color', color, dark)
 
     if (backgroundColor) {
@@ -847,38 +1052,23 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
   // Force resize after initial render
   useEffect(() => {
-    if (rendition?.manager && rendered) {
+    const el = ref.current
+    if (
+      active &&
+      !restoringPosition &&
+      el &&
+      el.clientWidth > 0 &&
+      el.clientHeight > 0 &&
+      rendition?.manager &&
+      rendered
+    ) {
       try {
-        // Call resize() without arguments to let epub.js recalculate
-        rendition.resize()
-        window.setTimeout(() => tab.refreshPageCountEstimate(), 150)
+        rendition.resize(el.clientWidth, el.clientHeight)
       } catch (error) {
         console.error('Error resizing rendition after render:', error)
       }
     }
-  }, [rendition, rendered, tab])
-
-  // Trigger resize when pane becomes visible after being hidden
-  useEffect(() => {
-    if (active && rendition?.manager) {
-      // Small delay to ensure DOM has updated after becoming visible
-      const timeoutId = setTimeout(() => {
-        if (rendition?.manager) {
-          // Double check rendition.manager is still valid
-          try {
-            rendition.resize()
-            window.setTimeout(() => tab.refreshPageCountEstimate(), 150)
-          } catch (error) {
-            console.error(
-              'Error resizing rendition on visibility change:',
-              error,
-            )
-          }
-        }
-      }, 50)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [active, rendition, tab])
+  }, [active, rendition, rendered, restoringPosition, tab])
 
   const [src, setSrc] = useState<string>()
 
@@ -893,7 +1083,6 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
 
   // `dragenter` not fired in iframe when the count of times is even, so use `dragover`
   useEventListener(iframe, 'dragover', (e: any) => {
-    console.log('drag enter in iframe')
     setDragEvent(e)
   })
 
@@ -920,11 +1109,6 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
     }
 
     if (isTouchScreen && container) {
-      if (getClickedAnnotation()) {
-        setClickedAnnotation(false)
-        return
-      }
-
       const w = container.clientWidth
       const x = e.clientX % w
       const threshold = 0.3
@@ -1054,6 +1238,11 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
   )
 
   const footer = <ReaderPaneFooter percentage={book.percentage} />
+  const presentationLegibilityDebt = developmentPresentationOutcome?.legibility
+    ? developmentPresentationOutcome.legibility.knownLowContrastSamples +
+      developmentPresentationOutcome.legibility.unknownPaintSamples +
+      (developmentPresentationOutcome.legibility.truncated ? 1 : 0)
+    : undefined
 
   return (
     <NewReaderLayout header={header} footer={footer}>
@@ -1065,9 +1254,24 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
         bannerVisible={false}
       />
       <div
-        className="relative flex h-full w-full flex-1 flex-col items-center"
+        className={clsx(
+          'relative flex h-full w-full flex-1 flex-col items-center',
+          restoringPosition && 'invisible',
+        )}
         style={{ backgroundColor }}
       >
+        {DEVELOPMENT_PRESENTATION_TEST_ENABLED && (
+          <div
+            className="absolute right-2 top-2 z-30 rounded bg-black/80 px-2 py-1 text-xs text-white"
+            title={developmentPresentationOutcome?.reason}
+          >
+            Adaptive test: {developmentPresentationOutcome?.status ?? 'waiting'}
+            {developmentPresentationOutcome &&
+              ` · spine ${developmentPresentationOutcome.spineIndex}`}
+            {presentationLegibilityDebt !== undefined &&
+              ` · debt ${presentationLegibilityDebt}`}
+          </div>
+        )}
         <div
           ref={wrapperRef}
           className="reader-wrapper relative mx-auto h-full"
@@ -1089,7 +1293,7 @@ function BookPane({ tab, onMouseDown, active }: BookPaneProps) {
                 'absolute inset-0',
                 // do not cover `sash`
                 'z-20',
-                rendered && 'hidden',
+                rendered && !restoringPosition && 'hidden',
                 background,
               )}
             />
@@ -1250,6 +1454,10 @@ interface ReaderPaneFooterProps {
 const ReaderPaneFooter: React.FC<ReaderPaneFooterProps> = ({
   percentage = 0,
 }) => {
+  const progress = Number.isFinite(percentage)
+    ? Math.max(0, Math.min(1, percentage))
+    : 0
+
   return (
     <footer className="border-border-light dark:border-border-dark relative flex h-14 shrink-0 items-center justify-between border-t px-6">
       <div className="flex-1" />
@@ -1258,18 +1466,18 @@ const ReaderPaneFooter: React.FC<ReaderPaneFooterProps> = ({
         <div className="bg-primary/20 relative h-0.5 w-full rounded-full shadow-sm">
           <div
             className="bg-primary absolute h-full rounded-full transition-all duration-300"
-            style={{ width: `${percentage * 100}%` }}
+            style={{ width: `${progress * 100}%` }}
           ></div>
           <div
             className="absolute top-1/2 -translate-y-1/2 transition-all duration-300"
-            style={{ left: `${percentage * 100}%` }}
+            style={{ left: `${progress * 100}%` }}
           >
             <div className="bg-primary border-surface-light dark:border-surface-dark h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 shadow-sm"></div>
           </div>
         </div>
       </div>
       <p className="text-subtle-light dark:text-subtle-dark flex-1 text-right text-sm">
-        {Math.round(percentage * 100)}%
+        {Math.round(progress * 100)}%
       </p>
     </footer>
   )

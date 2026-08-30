@@ -6,16 +6,22 @@ module.exports = {
     extend: {
       colors: {
         primary: 'rgb(var(--md-sys-color-primary) / <alpha-value>)',
-        'background-light': '#f6f7f8',
-        'background-dark': '#111c21',
-        'text-light': '#0e171b',
-        'text-dark': '#e7eff3',
-        'subtle-light': '#4e7f97',
-        'subtle-dark': '#a0b8c3',
-        'surface-light': '#ffffff',
-        'surface-dark': '#1a282f',
-        'border-light': '#e7eff3',
-        'border-dark': '#2c3e47',
+        'background-light':
+          'rgb(var(--md-sys-color-background) / <alpha-value>)',
+        'background-dark':
+          'rgb(var(--md-sys-color-background) / <alpha-value>)',
+        'text-light': 'rgb(var(--md-sys-color-on-background) / <alpha-value>)',
+        'text-dark': 'rgb(var(--md-sys-color-on-background) / <alpha-value>)',
+        'subtle-light':
+          'rgb(var(--md-sys-color-on-surface-variant) / <alpha-value>)',
+        'subtle-dark':
+          'rgb(var(--md-sys-color-on-surface-variant) / <alpha-value>)',
+        'surface-light': 'rgb(var(--md-sys-color-surface) / <alpha-value>)',
+        'surface-dark': 'rgb(var(--md-sys-color-surface) / <alpha-value>)',
+        'border-light':
+          'rgb(var(--md-sys-color-outline-variant) / <alpha-value>)',
+        'border-dark':
+          'rgb(var(--md-sys-color-outline-variant) / <alpha-value>)',
       },
       fontFamily: {
         display: ['Inter', 'sans-serif'],

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Delayed lazy image stability</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: #f8fafc;
+        font: 18px/1.5 Georgia, serif;
+      }
+      body {
+        padding: 24px;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin: 1em 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Delayed image</h1>
+    <p>Text before the image establishes the initial layout.</p>
+    <img
+      id="delayed-image"
+      src="delayed-tall.svg"
+      loading="lazy"
+      alt="A deliberately delayed test image"
+    />
+    <p>
+      Text after the image must land on the same final leaf in Reader and Atlas.
+    </p>
+  </body>
+</html>

@@ -1,16 +1,14 @@
-// @ts-ignore
 import { useLiveQuery } from 'dexie-react-hooks'
 import { saveAs } from 'file-saver'
-// @ts-ignore
 import Head from 'next/head'
-// @ts-ignore
 import { useRouter } from 'next/router'
 import React, { useEffect, useState, useRef } from 'react'
 import { usePrevious } from 'react-use'
 
+import { BookDetailsModal } from '../components/BookDetailsModal'
 import { LibraryView } from '../components/LibraryView'
 import { ReaderGridView } from '../components/Reader'
-import { BookRecord, db } from '../db'
+import { BookRecord, db, mergeIncomingBookRecord } from '../db'
 import { addFile, fetchBook, handleFiles } from '../file'
 import {
   useDisablePinchZooming,
@@ -19,7 +17,7 @@ import {
   useRemoteFiles,
 } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
-import { dbx, uploadData } from '../sync'
+import { downloadDropboxFile, queueBooksUpload } from '../sync'
 
 const SOURCE = 'src'
 
@@ -96,6 +94,7 @@ const Library: React.FC = () => {
 
   const [, setLoading] = useState<string | undefined>()
   const [readyToSync, setReadyToSync] = useState(false)
+  const [detailsBook, setDetailsBook] = useState<BookRecord | null>(null)
 
   const { groups } = useReaderSnapshot()
 
@@ -105,11 +104,11 @@ const Library: React.FC = () => {
       db?.books.toArray().then((books) => {
         if (books.length === 0) return
 
-        const newRemoteBooks = remoteFiles.map((f: any) =>
-          books.find((b) => b.name === f.name),
-        ) as BookRecord[]
+        const newRemoteBooks = remoteFiles
+          .map((f: any) => books.find((b) => b.name === f.name))
+          .filter((book): book is BookRecord => Boolean(book))
 
-        uploadData(newRemoteBooks)
+        void queueBooksUpload(newRemoteBooks)
         mutateRemoteBooks(newRemoteBooks, { revalidate: false })
       })
     }
@@ -118,7 +117,12 @@ const Library: React.FC = () => {
 
   useEffect(() => {
     if (!previousRemoteBooks && remoteBooks) {
-      db?.books.bulkPut(remoteBooks).then(() => setReadyToSync(true))
+      db?.transaction('rw', db.books, async () => {
+        for (const remoteBook of remoteBooks) {
+          const localBook = await db.books.get(remoteBook.id)
+          await db.books.put(mergeIncomingBookRecord(localBook, remoteBook))
+        }
+      }).then(() => setReadyToSync(true))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteBooks])
@@ -135,12 +139,10 @@ const Library: React.FC = () => {
         if (file) continue
 
         setLoading(book.id)
-        await dbx
-          .filesDownload({ path: `/files/${remoteFile.name}` })
-          .then((d) => {
-            const blob: Blob = (d.result as any).fileBlob
-            return addFile(book.id, new File([blob], book.name))
-          })
+        await downloadDropboxFile(`/files/${remoteFile.name}`).then((d) => {
+          const blob: Blob = (d.result as any).fileBlob
+          return addFile(book.id, new File([blob], book.name))
+        })
         setLoading(undefined)
       }
     })
@@ -162,9 +164,15 @@ const Library: React.FC = () => {
     // Removed confirm dialog as it was causing issues.
     // TODO: Implement a better confirmation UI (modal or double-click)
     try {
-      await db?.books.delete(book.id)
-      await db?.files.delete(book.id)
-      await db?.covers.delete(book.id)
+      await Promise.all([
+        db?.books.delete(book.id),
+        db?.files.delete(book.id),
+        db?.covers.delete(book.id),
+        // These are local derivations of the deleted EPUB, never reusable by
+        // a future book that happens to receive the same library ID.
+        db?.canonicalLocationIndices.delete(book.id),
+        db?.layoutAtlases.where('bookId').equals(book.id).delete(),
+      ])
       console.log('Book removed successfully')
     } catch (error) {
       console.error('Failed to remove book:', error)
@@ -172,14 +180,7 @@ const Library: React.FC = () => {
   }
 
   const handleViewDetails = (book: BookRecord) => {
-    // Placeholder for details view
-    alert(
-      `Details for: ${book.name}\nAuthor: ${book.metadata?.creator}\nSize: ${(
-        book.size /
-        1024 /
-        1024
-      ).toFixed(2)} MB`,
-    )
+    setDetailsBook(book)
   }
 
   if (groups.length) return null
@@ -215,6 +216,17 @@ const Library: React.FC = () => {
         onRemove={handleRemove}
         onViewDetails={handleViewDetails}
       />
+      {detailsBook && (
+        <BookDetailsModal
+          book={detailsBook}
+          cover={covers?.find((cover) => cover.id === detailsBook.id)?.cover}
+          onClose={() => setDetailsBook(null)}
+          onRead={(book) => {
+            setDetailsBook(null)
+            reader.addTab(book)
+          }}
+        />
+      )}
     </>
   )
 }

@@ -1,0 +1,1691 @@
+import EventEmitter from './utils/event-emitter'
+import { extend, defer, isFloat } from './utils/core'
+import Hook from './utils/hook'
+import EpubCFI from './epubcfi'
+import Queue from './utils/queue'
+import Layout, { sectionLayoutName } from './layout'
+// import Mapping from "./mapping";
+import Themes from './themes'
+import type Contents from './contents'
+import Annotations from './annotations'
+import { EVENTS, DOM_EVENTS } from './utils/constants'
+import type {
+  IEventEmitter,
+  RenditionOptions,
+  Location,
+  GlobalLayout,
+  ViewLocation,
+  SizeObject,
+  PackagingMetadataObject,
+  LayoutProps,
+  ViewManagerConstructor,
+  ViewConstructor,
+} from './types'
+import type Book from './book'
+import type Section from './section'
+import type {
+  PaginationLifecycle,
+  PaginationLifecycleContext,
+} from './pagination-lifecycle'
+
+// Default Views
+import IframeView from './managers/views/iframe'
+import type Views from './managers/helpers/views'
+
+// Default View Managers
+import DefaultViewManager from './managers/default/index'
+import ContinuousViewManager from './managers/continuous/index'
+
+// How long after a CFI display we keep re-anchoring on content reflow, and how
+// long we coalesce a burst of reflows (e.g. several images loading) before
+// re-applying the anchor. See onContentReflow().
+const REANCHOR_WINDOW = 2500
+const REANCHOR_DEBOUNCE = 50
+
+/**
+ * Version of the always-on image/SVG constraints applied before pagination.
+ * It belongs to the base renderer identity because it affects every layout,
+ * including Published mode where no LPE plan exists.
+ */
+export const RENDITION_IMAGE_LAYOUT_VERSION = 1 as const
+
+/**
+ * Displays an Epub as a series of Views for each Section.
+ * Requires Manager and View class to handle specifics of rendering
+ * the section content.
+ * @class
+ * @param {Book} book
+ * @param {object} [options]
+ * @param {number} [options.width]
+ * @param {number} [options.height]
+ * @param {string} [options.ignoreClass] class for the cfi parser to ignore
+ * @param {string | function | object} [options.manager='default']
+ * @param {string | function} [options.view='iframe']
+ * @param {string} [options.method] how content is delivered to the iframe: srcdoc, blobUrl, write
+ * @param {string} [options.layout] layout to force
+ * @param {string} [options.spread] force spread value
+ * @param {number} [options.minSpreadWidth] overridden by spread: none (never) / both (always)
+ * @param {string} [options.stylesheet] url of stylesheet to be injected
+ * @param {boolean} [options.resizeOnOrientationChange] false to disable orientation events
+ * @param {string} [options.script] url of script to be injected
+ * @param {boolean | object} [options.snap=false] use snap scrolling
+ * @param {string} [options.defaultDirection='ltr'] default text direction
+ * @param {boolean} [options.allowScriptedContent=false] enable running scripts in content
+ * @param {boolean} [options.allowPopups=false] enable opening popup in content
+ */
+export interface RenditionEvents extends Record<string, any[]> {
+  started: []
+  attached: []
+  displayed: [Section | undefined]
+  displayerror: [Error]
+  rendered: [Section, IframeView]
+  removed: [Section, IframeView]
+  resized: [{ width: number; height: number }, string?]
+  orientationchange: [number]
+  locationChanged: [
+    {
+      index: number
+      href: string
+      start: string
+      end: string
+      percentage: number | undefined
+    },
+  ]
+  relocated: [Location]
+  markClicked: [string, object | undefined, Contents]
+  selected: [string, Contents]
+  layout: [LayoutProps, Partial<LayoutProps>]
+}
+
+interface RenditionHooks {
+  display: Hook
+  serialize: Hook
+  content: Hook
+  unloaded: Hook
+  layout: Hook
+  render: Hook
+  show: Hook
+  preparePagination: Hook
+  beforePagination: Hook
+  afterPagination: Hook
+}
+
+class Rendition implements IEventEmitter<RenditionEvents> {
+  settings: RenditionOptions
+  book!: Book
+  hooks: RenditionHooks
+  themes: Themes
+  annotations: Annotations
+  epubcfi: EpubCFI
+  q: Queue
+  location: Location | undefined
+  starting: defer<void>
+  started: Promise<void>
+  manager!: DefaultViewManager
+  ViewManager!: ViewManagerConstructor
+  View!: ViewConstructor
+  _layout: Layout | undefined
+  displaying: defer<Section | undefined> | undefined
+  private displayRequest = 0
+
+  // After a CFI display, the section can still reflow (late-loading images, web
+  // fonts, or theme CSS injected by the host). The first moveTo() then clamps a
+  // deep target to the last *currently* measured page, stranding the reader an
+  // early page before where they actually were. We re-run the anchor on each
+  // content reflow for a short window so the restore settles on the real target.
+  _reanchorCfi: string | undefined
+  _reanchorUntil = 0
+  _reanchorTimer: ReturnType<typeof setTimeout> | undefined
+  _reanchoring = false
+
+  // `restore()` resizes and displays as one transaction. The manager emits
+  // RESIZED synchronously, so this prevents onResized() from starting a
+  // competing display with an old location before the requested CFI runs.
+  _suppressResizeDisplay = false
+  private readonly paginationLifecycle: PaginationLifecycle
+  private readonly paginationGeometryPipelines = new Map<string, () => string>()
+
+  // Recovers relocated/locationChanged when the rendition is displayed into a
+  // hidden/zero-size container. See _observeContainerResize().
+  _containerResizeObserver: ResizeObserver | undefined
+
+  declare on: IEventEmitter<RenditionEvents>['on']
+  declare off: IEventEmitter<RenditionEvents>['off']
+  declare emit: IEventEmitter<RenditionEvents>['emit']
+
+  constructor(book: Book, options?: RenditionOptions) {
+    this.settings = extend({} as RenditionOptions, {
+      width: null,
+      height: null,
+      ignoreClass: '',
+      manager: 'default',
+      view: 'iframe',
+      flow: null,
+      layout: null,
+      spread: null,
+      minSpreadWidth: 800,
+      stylesheet: null,
+      resizeOnOrientationChange: true,
+      script: null,
+      snap: false,
+      forceEvenPages: undefined,
+      defaultDirection: 'ltr',
+      allowScriptedContent: false,
+      allowPopups: false,
+    })
+
+    extend(this.settings, options)
+
+    if (typeof this.settings.manager === 'object') {
+      this.manager = this.settings.manager as DefaultViewManager
+    }
+
+    this.book = book
+
+    /**
+     * Adds Hook methods to the Rendition prototype
+     * @member {object} hooks
+     * @property {Hook} hooks.content
+     * @memberof Rendition
+     */
+    this.hooks = {} as RenditionHooks
+    this.hooks.display = new Hook(this)
+    this.hooks.serialize = new Hook(this)
+    this.hooks.content = new Hook(this)
+    this.hooks.unloaded = new Hook(this)
+    this.hooks.layout = new Hook(this)
+    this.hooks.render = new Hook(this)
+    this.hooks.show = new Hook(this)
+    this.hooks.preparePagination = new Hook(this)
+    this.hooks.beforePagination = new Hook(this)
+    this.hooks.afterPagination = new Hook(this)
+
+    this.paginationLifecycle = {
+      geometryProducerIds: () =>
+        [...this.paginationGeometryPipelines.keys()].sort(),
+      geometryPipelineFingerprint: () =>
+        this.getPaginationGeometryPipelineFingerprint(),
+      preparePagination: async (context, signal) => {
+        await this.triggerPaginationHook(this.hooks.preparePagination, [
+          context,
+          signal,
+        ])
+      },
+      beforePagination: async (context, signal) => {
+        const results = await this.triggerPaginationHook(
+          this.hooks.beforePagination,
+          [context, signal],
+        )
+        return [...results].reverse().find((value) => value !== undefined)
+      },
+      afterPagination: async (context, candidate, signal) => {
+        await this.triggerPaginationHook(this.hooks.afterPagination, [
+          context,
+          candidate,
+          signal,
+        ])
+        return undefined
+      },
+    }
+
+    this.hooks.content.register((contents: Contents) =>
+      this.handleLinks(contents),
+    )
+    this.hooks.content.register((contents: Contents) =>
+      this.passEvents(contents),
+    )
+    this.book.spine.hooks.content.register((doc: Document, section: Section) =>
+      this.injectIdentifier(doc, section),
+    )
+
+    if (this.settings.stylesheet) {
+      this.book.spine.hooks.content.register(
+        (doc: Document, section: Section) =>
+          this.injectStylesheet(doc, section),
+      )
+    }
+
+    if (this.settings.script) {
+      this.book.spine.hooks.content.register(
+        (doc: Document, section: Section) => this.injectScript(doc, section),
+      )
+    }
+
+    /**
+     * @member {Themes} themes
+     * @memberof Rendition
+     */
+    this.themes = new Themes(this)
+    this.hooks.preparePagination.register(
+      (context: PaginationLifecycleContext) =>
+        this.adjustImages(context.contents, context.layout),
+    )
+
+    /**
+     * @member {Annotations} annotations
+     * @memberof Rendition
+     */
+    this.annotations = new Annotations(this)
+
+    this.epubcfi = new EpubCFI()
+
+    this.q = new Queue(this)
+
+    /**
+     * A Rendered Location Range
+     * @typedef location
+     * @type {Object}
+     * @property {object} start
+     * @property {string} start.index
+     * @property {string} start.href
+     * @property {object} start.displayed
+     * @property {EpubCFI} start.cfi
+     * @property {number} start.location
+     * @property {number} start.percentage
+     * @property {number} start.displayed.page
+     * @property {number} start.displayed.total
+     * @property {object} end
+     * @property {string} end.index
+     * @property {string} end.href
+     * @property {object} end.displayed
+     * @property {EpubCFI} end.cfi
+     * @property {number} end.location
+     * @property {number} end.percentage
+     * @property {number} end.displayed.page
+     * @property {number} end.displayed.total
+     * @property {boolean} atStart
+     * @property {boolean} atEnd
+     * @memberof Rendition
+     */
+    this.location = undefined
+
+    // Hold queue until book is opened
+    this.q.enqueue(this.book.opened)
+
+    this.starting = new defer<void>()
+    /**
+     * @member {promise} started returns after the rendition has started
+     * @memberof Rendition
+     */
+    this.started = this.starting.promise
+
+    // Block the queue until rendering is started
+    this.q.enqueue(this.start)
+  }
+
+  /**
+   * Set the manager function
+   * @param {function} manager
+   */
+  setManager(manager: DefaultViewManager): void {
+    this.manager = manager
+  }
+
+  /**
+   * Require the manager from passed string, or as a class function
+   * @param  {string|object} manager [description]
+   * @return {method}
+   */
+  requireManager(
+    manager: string | ViewManagerConstructor | object,
+  ): ViewManagerConstructor {
+    let viewManager
+
+    // If manager is a string, try to load from imported managers
+    if (typeof manager === 'string' && manager === 'default') {
+      viewManager = DefaultViewManager
+    } else if (typeof manager === 'string' && manager === 'continuous') {
+      viewManager = ContinuousViewManager
+    } else {
+      // otherwise, assume we were passed a class function
+      viewManager = manager as ViewManagerConstructor
+    }
+
+    return viewManager
+  }
+
+  /**
+   * Require the view from passed string, or as a class function
+   * @param  {string|object} view
+   * @return {view}
+   */
+  requireView(view: string | ViewConstructor | object): ViewConstructor {
+    let View
+
+    // If view is a string, try to load from imported views,
+    if (typeof view === 'string' && view === 'iframe') {
+      View = IframeView
+    } else {
+      // otherwise, assume we were passed a class function
+      View = view as ViewConstructor
+    }
+
+    return View
+  }
+
+  /**
+   * Start the rendering
+   * @return {Promise} rendering has started
+   */
+  start(): void {
+    if (
+      !this.settings.layout &&
+      (this.book.package!.metadata.layout === 'pre-paginated' ||
+        this.book.displayOptions!.fixedLayout === 'true')
+    ) {
+      this.settings.layout = 'pre-paginated'
+    }
+    switch (this.book.package!.metadata.spread) {
+      case 'none':
+        this.settings.spread = 'none'
+        break
+      case 'both':
+        this.settings.spread = true
+        break
+    }
+
+    if (!this.manager) {
+      this.ViewManager = this.requireManager(this.settings.manager!)
+      this.View = this.requireView(this.settings.view!)
+
+      this.manager = new this.ViewManager({
+        view: this.View,
+        queue: this.q,
+        request: this.book.load.bind(this.book),
+        settings: this.settings,
+      }) as DefaultViewManager
+    }
+    this.manager.setPaginationLifecycle?.(this.paginationLifecycle)
+
+    this.direction(
+      this.book.package!.metadata.direction || this.settings.defaultDirection,
+    )
+
+    // Parse metadata to get layout props
+    this.settings.globalLayoutProperties = this.determineLayoutProperties(
+      this.book.package!.metadata,
+    )
+
+    this.flow(this.settings.globalLayoutProperties.flow)
+
+    this.layout(this.settings.globalLayoutProperties)
+
+    // Listen for displayed views
+    this.manager.on(EVENTS.MANAGERS.ADDED, (view: IframeView) =>
+      this.afterDisplayed(view),
+    )
+    this.manager.on(EVENTS.MANAGERS.REMOVED, (view: IframeView) =>
+      this.afterRemoved(view),
+    )
+
+    // Listen for resizing
+    this.manager.on(
+      EVENTS.MANAGERS.RESIZED,
+      (size: SizeObject, epubcfi?: string) => this.onResized(size, epubcfi),
+    )
+
+    // Listen for content-only reflow (a view grew without the viewport
+    // changing). onResized() above only fires on viewport/stage changes.
+    this.manager.on(EVENTS.MANAGERS.RESIZE, () => this.onContentReflow())
+
+    // A genuine user scroll (programmatic scrolls set `ignore`, so they don't
+    // emit MANAGERS.SCROLL) means the reader took over in scrolled/continuous
+    // flow — stop re-anchoring so we don't fight their scrolling. Guarded so
+    // this un-throttled scroll event does no work outside the re-anchor window.
+    this.manager.on(EVENTS.MANAGERS.SCROLL, () => {
+      if (this._reanchorCfi) this._disarmReanchor()
+    })
+
+    // Listen for rotation
+    this.manager.on(EVENTS.MANAGERS.ORIENTATION_CHANGE, (orientation: number) =>
+      this.onOrientationChange(orientation),
+    )
+
+    // Listen for scroll changes
+    this.manager.on(EVENTS.MANAGERS.SCROLLED, () => this.reportLocation())
+
+    /**
+     * Emit that rendering has started
+     * @event started
+     * @memberof Rendition
+     */
+    this.emit(EVENTS.RENDITION.STARTED)
+
+    // Start processing queue
+    this.starting.resolve()
+  }
+
+  /**
+   * Call to attach the container to an element in the dom
+   * Container must be attached before rendering can begin
+   * @param  {element} element to attach to
+   * @return {Promise}
+   */
+  attachTo(element: HTMLElement | string): Promise<void> {
+    return this.q.enqueue(() => {
+      // Start rendering
+      this.manager.render(element as HTMLElement, {
+        width: this.settings.width as number,
+        height: this.settings.height as number,
+      })
+
+      this._observeContainerResize()
+
+      /**
+       * Emit that rendering has attached to an element
+       * @event attached
+       * @memberof Rendition
+       */
+      this.emit(EVENTS.RENDITION.ATTACHED)
+    })
+  }
+
+  /**
+   * Display a point in the book
+   * The request will be added to the rendering Queue,
+   * so it will wait until book is opened, rendering started
+   * and all other rendering tasks have finished to be called.
+   * @param  {string} target Url or EpubCFI
+   * @return {Promise}
+   */
+  display(target?: string | number): Promise<Section> {
+    const request = ++this.displayRequest
+    if (this.displaying) {
+      this.displaying.resolve(undefined)
+      // Resolving the public promise alone does not stop the iframe/LPE work
+      // already running behind it. Destroying that partial view propagates an
+      // AbortSignal through pagination, allowing the latest queued target to
+      // start instead of waiting for an obsolete chapter to finish.
+      this.manager?.clear()
+    }
+    return this.q.enqueue(this._display, target, request) as Promise<Section>
+  }
+
+  /**
+   * Rebuild the currently rendered view before displaying a target.
+   *
+   * Calling `display()` with a CFI from an already-visible reflowable section
+   * is intentionally optimized into a move inside the existing iframe. Hosts
+   * which changed a pre-pagination input (theme, typography preparation, or a
+   * presentation policy) need a fresh iframe so those lifecycle hooks run
+   * again. Keeping clear + display in one queue item also prevents another
+   * navigation from being inserted between those two operations.
+   */
+  redisplay(target?: string | number): Promise<Section> {
+    return this.q.enqueue(this._redisplay, target) as Promise<Section>
+  }
+
+  /** @private */
+  _redisplay(
+    target?: string | number,
+  ): Promise<Section | undefined> | undefined {
+    this.manager.clear()
+    return this._display(target)
+  }
+
+  /**
+   * Tells the manager what to display immediately
+   * @private
+   * @param  {string} target Url or EpubCFI
+   * @return {Promise}
+   */
+  _display(
+    target?: string | number,
+    request = this.displayRequest,
+  ): Promise<Section | undefined> | undefined {
+    if (!this.book) {
+      return
+    }
+    // Multiple display() calls may enter the queue before its first animation
+    // frame. Skip targets superseded before they even began rendering.
+    if (request !== this.displayRequest) return Promise.resolve(undefined)
+    const displaying = new defer<Section | undefined>()
+    const displayed = displaying.promise
+
+    this.displaying = displaying
+
+    // Check if this is a book percentage
+    if (this.book.locations.length() && isFloat(target)) {
+      target = this.book.locations.cfiFromPercentage(
+        parseFloat(target as string),
+      )
+    }
+
+    const section: Section | null = this.book.spine.get(target)
+
+    if (!section) {
+      displaying.reject(new Error('No Section Found'))
+      return displayed
+    }
+
+    // Arm re-anchoring for CFI targets so a later content reflow can correct
+    // a clamped restore (target may now be a CFI even when the original
+    // argument was a percentage, resolved above).
+    if (this.epubcfi.isCfiString(target)) {
+      this._armReanchor(target as string)
+    } else {
+      this._disarmReanchor()
+    }
+
+    this.manager.display(section, target as string).then(
+      () => {
+        if (request !== this.displayRequest) {
+          displaying.resolve(undefined)
+          if (this.displaying === displaying) {
+            this.displaying = undefined
+          }
+          return
+        }
+        displaying.resolve(section)
+        if (this.displaying === displaying) {
+          this.displaying = undefined
+        }
+
+        /**
+         * Emit that a section has been displayed
+         * @event displayed
+         * @param {Section} section
+         * @memberof Rendition
+         */
+        this.emit(EVENTS.RENDITION.DISPLAYED, section)
+        this.reportLocation()
+      },
+      (err: Error) => {
+        if (request !== this.displayRequest) {
+          displaying.resolve(undefined)
+          return
+        }
+        displaying.reject(err)
+        if (this.displaying === displaying) {
+          this.displaying = undefined
+        }
+        /**
+         * Emit that has been an error displaying
+         * @event displayError
+         * @param {Section} section
+         * @memberof Rendition
+         */
+        this.emit(EVENTS.RENDITION.DISPLAY_ERROR, err)
+      },
+    )
+
+    return displayed
+  }
+
+  /*
+	render(view, show) {
+
+		// view.onLayout = this.layout.format.bind(this.layout);
+		view.create();
+
+		// Fit to size of the container, apply padding
+		this.manager.resizeView(view);
+
+		// Render Chain
+		return view.section.render(this.book.request)
+			.then(function(contents){
+				return view.load(contents);
+			}.bind(this))
+			.then(function(doc){
+				return this.hooks.content.trigger(view, this);
+			}.bind(this))
+			.then(function(){
+				this.layout.format(view.contents);
+				return this.hooks.layout.trigger(view, this);
+			}.bind(this))
+			.then(function(){
+				return view.display();
+			}.bind(this))
+			.then(function(){
+				return this.hooks.render.trigger(view, this);
+			}.bind(this))
+			.then(function(){
+				if(show !== false) {
+					this.q.enqueue(function(view){
+						view.show();
+					}, view);
+				}
+				// this.map = new Map(view, this.layout);
+				this.hooks.show.trigger(view, this);
+				this.trigger("rendered", view.section);
+
+			}.bind(this))
+			.catch(function(e){
+				this.trigger("loaderror", e);
+			}.bind(this));
+
+	}
+	*/
+
+  /**
+   * Report what section has been displayed
+   * @private
+   * @param  {*} view
+   */
+  afterDisplayed(view: IframeView): void {
+    view.on(
+      EVENTS.VIEWS.MARK_CLICKED,
+      (cfiRange: string, data: object | undefined) => {
+        if (view.contents) {
+          this.triggerMarkEvent(cfiRange, data, view.contents)
+        }
+      },
+    )
+
+    const isCurrent = (): boolean =>
+      !view._disposed &&
+      view.displayed &&
+      Boolean(view.contents) &&
+      this.manager?.views?.indexOf(view) !== -1
+
+    this.hooks.render.trigger(view, this).then(() => {
+      if (!isCurrent()) return
+      const contents = view.contents!
+      this.hooks.content.trigger(contents, this).then(() => {
+        if (isCurrent()) {
+          /**
+           * Emit that a section has been rendered
+           * @event rendered
+           * @param {Section} section
+           * @param {View} view
+           * @memberof Rendition
+           */
+          this.emit(EVENTS.RENDITION.RENDERED, view.section, view)
+        }
+      })
+    })
+  }
+
+  /**
+   * Report what has been removed
+   * @private
+   * @param  {*} view
+   */
+  afterRemoved(view: IframeView): void {
+    this.hooks.unloaded.trigger(view, this).then(() => {
+      /**
+       * Emit that a section has been removed
+       * @event removed
+       * @param {Section} section
+       * @param {View} view
+       * @memberof Rendition
+       */
+      this.emit(EVENTS.RENDITION.REMOVED, view.section, view)
+    })
+  }
+
+  /**
+   * Remember a CFI target so content reflows can re-anchor to it. Opens a
+   * short window after the display call during which onContentReflow() acts.
+   * @private
+   */
+  _clearReanchorTimer(): void {
+    const timer = this._reanchorTimer
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this._reanchorTimer = undefined
+    }
+  }
+
+  /** The same lifecycle object is passed to detached Atlas measurement. */
+  getPaginationLifecycle(): PaginationLifecycle {
+    return this.paginationLifecycle
+  }
+
+  /**
+   * Register one geometry-producing presentation pipeline. Its resolver must
+   * contain only geometry-relevant configuration; paint-only theme choices do
+   * not belong in the Atlas key.
+   */
+  registerPaginationGeometryPipeline(
+    producerId: string,
+    resolveFingerprint: () => string,
+  ): () => void {
+    if (!producerId || typeof resolveFingerprint !== 'function') {
+      throw new TypeError('Invalid pagination geometry pipeline')
+    }
+    if (this.paginationGeometryPipelines.has(producerId)) {
+      throw new Error(
+        `Pagination geometry pipeline already exists: ${producerId}`,
+      )
+    }
+    this.paginationGeometryPipelines.set(producerId, resolveFingerprint)
+    return () => {
+      if (
+        this.paginationGeometryPipelines.get(producerId) === resolveFingerprint
+      ) {
+        this.paginationGeometryPipelines.delete(producerId)
+      }
+    }
+  }
+
+  getPaginationGeometryPipelineFingerprint(): string {
+    const entries = [...this.paginationGeometryPipelines]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([producerId, resolveFingerprint]) => {
+        const fingerprint = resolveFingerprint()
+        if (!fingerprint) {
+          throw new Error(
+            `Pagination geometry pipeline fingerprint is empty: ${producerId}`,
+          )
+        }
+        return [producerId, fingerprint]
+      })
+    return JSON.stringify(entries)
+  }
+
+  /**
+   * Execute pagination hooks without Hook.trigger's legacy sync-error
+   * swallowing. A presentation boundary must fail closed and remain hidden.
+   */
+  private async triggerPaginationHook(
+    hook: Hook,
+    args:
+      | [PaginationLifecycleContext, AbortSignal | undefined]
+      | [PaginationLifecycleContext, unknown, AbortSignal | undefined],
+  ): Promise<unknown[]> {
+    const results: unknown[] = []
+    // Presentation hooks form an ordered transaction. In particular, active
+    // theme CSS must finish loading before overrides, typography and analysis.
+    for (const task of hook.list()) {
+      results.push(
+        await Promise.resolve().then(() => task.call(hook.context, ...args)),
+      )
+    }
+    return results
+  }
+
+  _armReanchor(cfi: string): void {
+    this._reanchorCfi = cfi
+    this._reanchorUntil = Date.now() + REANCHOR_WINDOW
+    // A fresh display supersedes any re-anchor still pending from an earlier
+    // reflow, so its timeout can't fire and yank back to the old target.
+    this._clearReanchorTimer()
+  }
+
+  /**
+   * Cancel a pending re-anchor — e.g. the user turned the page, taking over
+   * navigation, so we must not yank them back to the previous target.
+   * @private
+   */
+  _disarmReanchor(): void {
+    this._reanchorCfi = undefined
+    this._reanchorUntil = 0
+    this._clearReanchorTimer()
+  }
+
+  /**
+   * Content (not the viewport) reflowed. The first display anchored against an
+   * under-measured layout, so a deep CFI may have been clamped to an earlier
+   * page; re-apply the original target and re-report so consumers persist the
+   * corrected location rather than the clamped one.
+   * @private
+   */
+  onContentReflow(): void {
+    const cfi = this._reanchorCfi
+    if (!cfi) return
+    if (Date.now() > this._reanchorUntil) {
+      this._disarmReanchor()
+      return
+    }
+    // Fixed-layout views don't reflow; re-adding them would only flicker.
+    if (this._layout && this._layout.name === 'pre-paginated') return
+    this._clearReanchorTimer()
+    this._reanchorTimer = setTimeout(() => {
+      // Bail if a newer display re-armed/cleared the target or the window
+      // lapsed, or a display is still mid-flight (it anchors itself) — never
+      // re-anchor to a stale location.
+      if (this._reanchorCfi !== cfi || Date.now() > this._reanchorUntil) return
+      // Skip while a user display (this.displaying) or an earlier re-anchor
+      // is still in flight, so overlapping manager.display() calls can't
+      // fight over views (matters for async managers, e.g. continuous).
+      if (this.displaying || this._reanchoring) return
+      const section = this.book && this.book.spine.get(cfi)
+      if (!section) return
+      // Drive the manager directly instead of this.display(): the queued
+      // path would cancel an in-flight user navigation and re-arm the
+      // window via _display(), looping while content keeps reflowing.
+      this._reanchoring = true
+      this.manager
+        .display(section, cfi)
+        .then(() => this.reportLocation())
+        .catch((error: Error) =>
+          this.emit(EVENTS.RENDITION.DISPLAY_ERROR, error),
+        )
+        .finally(() => {
+          this._reanchoring = false
+        })
+    }, REANCHOR_DEBOUNCE)
+  }
+
+  /**
+   * Report resize events and display the last seen location
+   * @private
+   */
+  onResized(size: SizeObject, epubcfi?: string): void {
+    /**
+     * Emit that the rendition has been resized
+     * @event resized
+     * @param {number} width
+     * @param {height} height
+     * @param {string} epubcfi (optional)
+     * @memberof Rendition
+     */
+    this.emit(
+      EVENTS.RENDITION.RESIZED,
+      {
+        width: size.width,
+        height: size.height,
+      },
+      epubcfi,
+    )
+
+    if (this._suppressResizeDisplay) {
+      return
+    }
+
+    if (this.location && this.location.start) {
+      this.display(epubcfi || this.location.start.cfi)
+    }
+  }
+
+  /**
+   * Watch the container so a rendition displayed into a hidden/zero-size
+   * element re-reports its location once the element becomes measurable.
+   * Only acts before the first location is established; once a location
+   * exists the observer disconnects on its next callback and the normal
+   * resize path handles subsequent changes.
+   * @private
+   */
+  _observeContainerResize(): void {
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    if (
+      this._containerResizeObserver ||
+      !this.manager ||
+      !this.manager.container
+    ) {
+      return
+    }
+    const container = this.manager.container
+    // Gate recovery on a real unmeasurable→measurable transition so a
+    // container sized from the start doesn't double-emit relocated.
+    let seenUnmeasured = false
+    this._containerResizeObserver = new ResizeObserver((entries) => {
+      if (!this.manager || !this.manager.isRendered()) {
+        return
+      }
+      if (this.location) {
+        this._disconnectContainerObserver()
+        return
+      }
+      const entry = entries[entries.length - 1]
+      if (!entry) {
+        return
+      }
+      const usable = entry.contentRect.width > 0 && entry.contentRect.height > 0
+      if (!usable) {
+        seenUnmeasured = true
+        return
+      }
+      if (seenUnmeasured) {
+        // reportLocation() is async and may bail without setting
+        // this.location, so leave teardown to the guard above and let
+        // each measurable resize retry until a location sticks.
+        this.reportLocation()
+      }
+    })
+    this._containerResizeObserver.observe(container)
+  }
+
+  /**
+   * Disconnect and clear the container resize observer.
+   * @private
+   */
+  _disconnectContainerObserver(): void {
+    if (this._containerResizeObserver) {
+      this._containerResizeObserver.disconnect()
+      this._containerResizeObserver = undefined
+    }
+  }
+
+  /**
+   * Report orientation events and display the last seen location
+   * @private
+   */
+  onOrientationChange(orientation: number): void {
+    /**
+     * Emit that the rendition has been rotated
+     * @event orientationchange
+     * @param {number} orientation
+     * @memberof Rendition
+     */
+    this.emit(EVENTS.RENDITION.ORIENTATION_CHANGE, orientation)
+  }
+
+  /**
+   * Move the Rendition to a specific offset
+   * Usually you would be better off calling display()
+   * @param {object} offset
+   */
+  moveTo(offset: { left: number; top: number }): void {
+    this.manager.moveTo(offset)
+  }
+
+  /**
+   * Trigger a resize of the views
+   * @param {number} [width]
+   * @param {number} [height]
+   * @param {string} [epubcfi] (optional)
+   */
+  resize(width?: number, height?: number, epubcfi?: string): void {
+    if (width) {
+      this.settings.width = width
+    }
+    if (height) {
+      this.settings.height = height
+    }
+    this.manager.resize(width, height, epubcfi)
+  }
+
+  /**
+   * Resize the viewport and display one explicit target without allowing the
+   * resize event to queue a second, stale relocation in between. This is
+   * useful when a hidden rendition becomes visible again.
+   */
+  restore(
+    target?: string | number,
+    width?: number,
+    height?: number,
+  ): Promise<Section> {
+    this._suppressResizeDisplay = true
+    try {
+      this.resize(width, height)
+    } finally {
+      this._suppressResizeDisplay = false
+    }
+    return this.display(target)
+  }
+
+  /**
+   * Clear all rendered views
+   */
+  clear(): void {
+    this.manager.clear()
+  }
+
+  /**
+   * Go to the next "page" in the rendition
+   * @return {Promise}
+   */
+  next(): Promise<void> {
+    this._disarmReanchor()
+    return this.q
+      .enqueue(() => this.manager.next())
+      .then(() => this.reportLocation())
+  }
+
+  /**
+   * Go to the previous "page" in the rendition
+   * @return {Promise}
+   */
+  prev(): Promise<void> {
+    this._disarmReanchor()
+    return this.q
+      .enqueue(() => this.manager.prev())
+      .then(() => this.reportLocation())
+  }
+
+  //-- http://www.idpf.org/epub/301/spec/epub-publications.html#meta-properties-rendering
+  /**
+   * Determine the Layout properties from metadata and settings
+   * @private
+   * @param  {object} metadata
+   * @return {object} properties
+   */
+  determineLayoutProperties(metadata: PackagingMetadataObject): GlobalLayout {
+    const layout = this.settings.layout || metadata.layout || 'reflowable'
+    const spread = this.settings.spread || metadata.spread || 'auto'
+    const orientation =
+      this.settings.orientation || metadata.orientation || 'auto'
+    const flow = this.settings.flow || metadata.flow || 'auto'
+    const viewport = metadata.viewport || ''
+    const minSpreadWidth =
+      this.settings.minSpreadWidth || metadata.minSpreadWidth || 800
+    const direction = this.settings.direction || metadata.direction || 'ltr'
+
+    if (
+      (this.settings.width === 0 || (this.settings.width as number) > 0) &&
+      (this.settings.height === 0 || (this.settings.height as number) > 0)
+    ) {
+      // viewport = "width="+this.settings.width+", height="+this.settings.height+"";
+    }
+
+    const properties = {
+      layout: layout,
+      spread: spread as string,
+      orientation: orientation,
+      flow: flow,
+      viewport: viewport,
+      minSpreadWidth: minSpreadWidth as number,
+      direction: direction,
+    }
+
+    return properties
+  }
+
+  /**
+   * Adjust the flow of the rendition to paginated or scrolled
+   * (scrolled-continuous vs scrolled-doc are handled by different view managers)
+   * @param  {string} flow
+   */
+  flow(flow: string): void {
+    let _flow = flow
+    if (
+      flow === 'scrolled' ||
+      flow === 'scrolled-doc' ||
+      flow === 'scrolled-continuous'
+    ) {
+      _flow = 'scrolled'
+    }
+
+    if (flow === 'auto' || flow === 'paginated') {
+      _flow = 'paginated'
+    }
+
+    this.settings.flow = flow
+
+    if (this._layout) {
+      this._layout.flow(_flow)
+    }
+
+    if (this.manager && this._layout) {
+      this.manager.applyLayout(this._layout)
+    }
+
+    if (this.manager) {
+      this.manager.updateFlow(_flow)
+    }
+
+    if (this.manager && this.manager.isRendered() && this.location) {
+      this.manager.clear()
+      this.display(this.location.start.cfi)
+    }
+  }
+
+  /**
+   * Adjust the layout of the rendition to reflowable or pre-paginated
+   * @param  {object} settings
+   */
+  layout(settings?: GlobalLayout): Layout | undefined {
+    if (settings) {
+      this._layout = new Layout(settings)
+      this._layout.spread(settings.spread, this.settings.minSpreadWidth)
+
+      // this.mapping = new Mapping(this._layout.props);
+
+      this._layout.on(
+        EVENTS.LAYOUT.UPDATED,
+        (props: LayoutProps, changed: Partial<LayoutProps>) => {
+          this.emit(EVENTS.RENDITION.LAYOUT, props, changed)
+        },
+      )
+    }
+
+    if (this.manager && this._layout) {
+      this.manager.applyLayout(this._layout)
+    }
+
+    return this._layout
+  }
+
+  /**
+   * Adjust if the rendition uses spreads
+   * @param  {string} spread none | auto
+   * @param  {int} [min] min width to use spreads at
+   */
+  spread(spread: string, min?: number): void {
+    this.settings.spread = spread
+
+    if (min) {
+      this.settings.minSpreadWidth = min
+    }
+
+    if (this._layout) {
+      this._layout.spread(spread, min)
+    }
+
+    if (this.manager && this.manager.isRendered()) {
+      // A spread change can alter which fixed-layout spine items share the
+      // visible opening. Re-applying the layout lets the manager rebuild that
+      // opening; resizing the existing iframes alone would leave an old
+      // one-page/two-page composition on screen.
+      if (this._layout) {
+        void this.manager
+          .applyLayout(this._layout, true)
+          ?.catch((error) => this.emit(EVENTS.RENDITION.DISPLAY_ERROR, error))
+      } else {
+        this.manager.updateLayout()
+      }
+    }
+  }
+
+  /**
+   * Adjust the direction of the rendition
+   * @param  {string} dir
+   */
+  direction(dir?: string): void {
+    this.settings.direction = dir || 'ltr'
+
+    if (this.manager) {
+      this.manager.direction(this.settings.direction)
+    }
+
+    if (this.manager && this.manager.isRendered() && this.location) {
+      this.manager.clear()
+      this.display(this.location.start.cfi)
+    }
+  }
+
+  /**
+   * Report the current location.
+   * Emits "relocated" and "locationChanged" events.
+   */
+  reportLocation(): Promise<void> {
+    return this.q.enqueue(() => {
+      requestAnimationFrame(() => {
+        if (!this.manager) {
+          return
+        }
+        const location = this.manager.currentLocation() as
+          | ViewLocation[]
+          | PromiseLike<ViewLocation[]>
+        if (
+          location &&
+          'then' in location &&
+          typeof location.then === 'function'
+        ) {
+          ;(location as PromiseLike<ViewLocation[]>).then(
+            (result: ViewLocation[]) => {
+              const located = this.located(result)
+
+              if (!located || !located.start || !located.end) {
+                return
+              }
+
+              this.location = located
+
+              this.emit(EVENTS.RENDITION.LOCATION_CHANGED, {
+                index: this.location.start.index,
+                href: this.location.start.href,
+                start: this.location.start.cfi,
+                end: this.location.end.cfi,
+                percentage: this.location.start.percentage,
+              })
+
+              this.emit(EVENTS.RENDITION.RELOCATED, this.location)
+            },
+          )
+        } else if (location) {
+          const located = this.located(location as ViewLocation[])
+
+          if (!located || !located.start || !located.end) {
+            return
+          }
+
+          this.location = located
+
+          /**
+           * @event locationChanged
+           * @deprecated
+           * @type {object}
+           * @property {number} index
+           * @property {string} href
+           * @property {EpubCFI} start
+           * @property {EpubCFI} end
+           * @property {number} percentage
+           * @memberof Rendition
+           */
+          this.emit(EVENTS.RENDITION.LOCATION_CHANGED, {
+            index: this.location.start.index,
+            href: this.location.start.href,
+            start: this.location.start.cfi,
+            end: this.location.end.cfi,
+            percentage: this.location.start.percentage,
+          })
+
+          /**
+           * @event relocated
+           * @type {displayedLocation}
+           * @memberof Rendition
+           */
+          this.emit(EVENTS.RENDITION.RELOCATED, this.location)
+        }
+      })
+    })
+  }
+
+  /**
+   * Get the Current Location object
+   * @return {displayedLocation | promise} location (may be a promise)
+   */
+  currentLocation(): Location | undefined {
+    if (!this.manager) {
+      return undefined
+    }
+    const location = this.manager.currentLocation() as
+      | ViewLocation[]
+      | PromiseLike<ViewLocation[]>
+    if (location && 'then' in location && typeof location.then === 'function') {
+      ;(location as PromiseLike<ViewLocation[]>).then(
+        (result: ViewLocation[]) => {
+          const located = this.located(result)
+          return located
+        },
+      )
+    } else if (location) {
+      const located = this.located(location as ViewLocation[])
+      return located
+    }
+    return undefined
+  }
+
+  /**
+   * Creates a Rendition#locationRange from location
+   * passed by the Manager
+   * @returns {displayedLocation}
+   * @private
+   */
+  located(location: ViewLocation[]): Location | undefined {
+    if (!location.length) {
+      return undefined
+    }
+    const start = location[0]!
+    const end = location[location.length - 1]!
+
+    const located: Location = {
+      start: {
+        index: start.index,
+        href: start.href,
+        cfi: start.mapping.start,
+        displayed: {
+          page: start.pages[0] || 1,
+          total: start.totalPages,
+        },
+      },
+      end: {
+        index: end.index,
+        href: end.href,
+        cfi: end.mapping.end,
+        displayed: {
+          page: end.pages[end.pages.length - 1] || 1,
+          total: end.totalPages,
+        },
+      },
+    }
+
+    const locationStart = this.book.locations.locationFromCfi(
+      start.mapping.start,
+    )
+    const locationEnd = this.book.locations.locationFromCfi(end.mapping.end)
+
+    if (locationStart != null) {
+      located.start.location = locationStart
+      located.start.percentage =
+        this.book.locations.percentageFromLocation(locationStart)
+    }
+    if (locationEnd != null) {
+      located.end.location = locationEnd
+      located.end.percentage =
+        this.book.locations.percentageFromLocation(locationEnd)
+    }
+
+    const pageStart = this.book.pageList.pageFromCfi(start.mapping.start)
+    const pageEnd = this.book.pageList.pageFromCfi(end.mapping.end)
+
+    if (pageStart !== -1) {
+      located.start.page = pageStart
+    }
+    if (pageEnd !== -1) {
+      located.end.page = pageEnd
+    }
+
+    if (
+      end.index === this.book.spine.last()!.index &&
+      located.end.displayed.page >= located.end.displayed.total
+    ) {
+      located.atEnd = true
+    }
+
+    if (
+      start.index === this.book.spine.first()!.index &&
+      located.start.displayed.page === 1
+    ) {
+      located.atStart = true
+    }
+
+    return located
+  }
+
+  /**
+   * Remove and Clean Up the Rendition
+   */
+  destroy(): void {
+    this.q.clear()
+    this._disarmReanchor()
+
+    this._disconnectContainerObserver()
+
+    if (this.manager) {
+      this.manager.off(EVENTS.MANAGERS.ADDED)
+      this.manager.off(EVENTS.MANAGERS.REMOVED)
+      this.manager.off(EVENTS.MANAGERS.RESIZED)
+      this.manager.off(EVENTS.MANAGERS.RESIZE)
+      this.manager.off(EVENTS.MANAGERS.SCROLL)
+      this.manager.off(EVENTS.MANAGERS.ORIENTATION_CHANGE)
+      this.manager.off(EVENTS.MANAGERS.SCROLLED)
+      this.manager.destroy()
+      this.manager = undefined!
+    }
+
+    this.book = undefined!
+
+    this.hooks.display.clear()
+    this.hooks.serialize.clear()
+    this.hooks.content.clear()
+    this.hooks.unloaded.clear()
+    this.hooks.layout.clear()
+    this.hooks.render.clear()
+    this.hooks.show.clear()
+    this.hooks.preparePagination.clear()
+    this.hooks.beforePagination.clear()
+    this.hooks.afterPagination.clear()
+    this.paginationGeometryPipelines.clear()
+
+    this.themes.destroy()
+
+    if (this._layout) {
+      this._layout.off(EVENTS.LAYOUT.UPDATED)
+    }
+    this._layout = undefined
+    this.location = undefined
+  }
+
+  /**
+   * Pass the events from a view's Contents
+   * @private
+   * @param  {Contents} view contents
+   */
+  passEvents(contents: Contents): void {
+    DOM_EVENTS.forEach((e) => {
+      contents.on(e, (ev: Event) => this.triggerViewEvent(ev, contents))
+    })
+
+    contents.on(EVENTS.CONTENTS.SELECTED, (e: string) =>
+      this.triggerSelectedEvent(e, contents),
+    )
+  }
+
+  /**
+   * Emit events passed by a view
+   * @private
+   * @param  {event} e
+   */
+  triggerViewEvent(e: Event, contents: Contents): void {
+    this.emit(e.type, e, contents)
+  }
+
+  /**
+   * Emit a selection event's CFI Range passed from a a view
+   * @private
+   * @param  {string} cfirange
+   */
+  triggerSelectedEvent(cfirange: string, contents: Contents): void {
+    /**
+     * Emit that a text selection has occurred
+     * @event selected
+     * @param {string} cfirange
+     * @param {Contents} contents
+     * @memberof Rendition
+     */
+    this.emit(EVENTS.RENDITION.SELECTED, cfirange, contents)
+  }
+
+  /**
+   * Emit a markClicked event with the cfiRange and data from a mark
+   * @private
+   * @param  {EpubCFI} cfirange
+   */
+  triggerMarkEvent(
+    cfiRange: string,
+    data: object | undefined,
+    contents: Contents,
+  ): void {
+    /**
+     * Emit that a mark was clicked
+     * @event markClicked
+     * @param {EpubCFI} cfirange
+     * @param {object} data
+     * @param {Contents} contents
+     * @memberof Rendition
+     */
+    this.emit(EVENTS.RENDITION.MARK_CLICKED, cfiRange, data, contents)
+  }
+
+  /**
+   * Get a Range from a Visible CFI
+   * @param  {string} cfi EpubCfi String
+   * @param  {string} ignoreClass
+   * @return {range}
+   */
+  getRange(cfi: string, ignoreClass?: string): Range | undefined {
+    const _cfi = new EpubCFI(cfi)
+    const found = this.manager.visible().filter(function (view: IframeView) {
+      if (_cfi.spinePos === view.index) return true
+      return false
+    })
+
+    // Should only every return 1 item
+    if (found.length) {
+      return found[0]!.contents!.range(_cfi.toString(), ignoreClass)
+    }
+    return undefined
+  }
+
+  /**
+   * Hook to adjust images to fit in columns
+   * @param  {Contents} contents
+   * @private
+   */
+  adjustImages(
+    contents: Contents,
+    layout: Layout = this._layout!,
+  ): Promise<void> {
+    const section = this.book.spine.get(contents.sectionIndex)
+
+    // Column-fitting rules would clamp a fixed-layout page's artwork to the
+    // column width inside its viewport-sized, scaled document.
+    if (sectionLayoutName(section, layout.name) === 'pre-paginated') {
+      return new Promise<void>(function (resolve) {
+        resolve()
+      })
+    }
+
+    // This hook runs before Layout.format so LPE and Atlas observe the same
+    // image constraints. Reading body.offsetHeight here creates a circular
+    // dependency for percentage-height SVG covers: their natural height
+    // depends on the body that is waiting to be paginated. Use the already
+    // resolved page geometry instead, which also avoids an early forced
+    // reflow while a srcdoc document is settling.
+    const pageHeight =
+      Number.isFinite(layout.height) && layout.height > 0
+        ? layout.height
+        : contents.window.innerHeight
+    const maxHeight = Math.max(1, pageHeight * 0.95)
+    const pageWidth =
+      Number.isFinite(layout.columnWidth) && layout.columnWidth > 0
+        ? layout.columnWidth
+        : Number.isFinite(layout.width) && layout.width > 0
+        ? layout.width
+        : contents.window.innerWidth
+    const maxWidth = pageWidth > 0 ? `${pageWidth}px` : '100%'
+
+    // Calibre and several publisher pipelines represent a cover as one
+    // raster image inside a 100% x 100% SVG. When that image-only SVG has a
+    // viewBox, give its viewport the same intrinsic ratio; this preserves the
+    // artwork even when the author used preserveAspectRatio="none" internally.
+    const svgElements = Array.from(contents.content.querySelectorAll('svg'))
+    const imageOnlySvg = svgElements.find(
+      (svg) =>
+        svgElements.length === 1 &&
+        !contents.content.textContent?.trim() &&
+        contents.content.querySelectorAll('img').length === 0 &&
+        svg.querySelectorAll('*').length === 1 &&
+        svg.querySelector('image'),
+    )
+    const viewBoxValues = imageOnlySvg
+      ?.getAttribute('viewBox')
+      ?.trim()
+      .split(/[\s,]+/u)
+      .map(Number)
+    const imageOnlyAspectRatio =
+      viewBoxValues?.length === 4 &&
+      viewBoxValues.every(Number.isFinite) &&
+      viewBoxValues[2]! > 0 &&
+      viewBoxValues[3]! > 0
+        ? `${viewBoxValues[2]} / ${viewBoxValues[3]}`
+        : undefined
+    const imageOnlyRatio = imageOnlyAspectRatio
+      ? viewBoxValues![2]! / viewBoxValues![3]!
+      : undefined
+    const imageOnlyWidth = imageOnlyRatio
+      ? Math.min(
+          pageWidth > 0 ? pageWidth : Number.POSITIVE_INFINITY,
+          maxHeight * imageOnlyRatio,
+        )
+      : undefined
+    const imageOnlyHeight =
+      imageOnlyRatio && imageOnlyWidth
+        ? imageOnlyWidth / imageOnlyRatio
+        : undefined
+
+    contents.addStylesheetRules({
+      img: {
+        'max-width': maxWidth + '!important',
+        'max-height': maxHeight + 'px' + '!important',
+        'object-fit': 'contain',
+        'page-break-inside': 'avoid',
+        'break-inside': 'avoid',
+        'box-sizing': 'border-box',
+      },
+      svg: imageOnlyAspectRatio
+        ? {
+            width: imageOnlyWidth + 'px!important',
+            height: imageOnlyHeight + 'px!important',
+            'aspect-ratio': imageOnlyAspectRatio + '!important',
+            'max-width': maxWidth + '!important',
+            'max-height': maxHeight + 'px' + '!important',
+            'margin-left': 'auto!important',
+            'margin-right': 'auto!important',
+            'page-break-inside': 'avoid',
+            'break-inside': 'avoid',
+            'box-sizing': 'border-box',
+          }
+        : {
+            'max-width': maxWidth + '!important',
+            'max-height': maxHeight + 'px' + '!important',
+            'page-break-inside': 'avoid',
+            'break-inside': 'avoid',
+          },
+    })
+
+    return new Promise<void>(function (resolve) {
+      // Wait to apply
+      setTimeout(resolve, 0)
+    })
+  }
+
+  /**
+   * Get the Contents object of each rendered view
+   * @returns {Contents[]}
+   */
+  getContents(): Contents[] {
+    return this.manager ? this.manager.getContents() : []
+  }
+
+  /**
+   * Get the views member from the manager
+   * @returns {Views}
+   */
+  views(): Views | IframeView[] {
+    const views = this.manager ? this.manager.views : undefined
+    return views || []
+  }
+
+  /**
+   * Hook to handle link clicks in rendered content
+   * @param  {Contents} contents
+   * @private
+   */
+  handleLinks(contents: Contents): void {
+    if (contents) {
+      contents.on(EVENTS.CONTENTS.LINK_CLICKED, (href: string) => {
+        const relative = this.book.path!.relative(href)
+        this.display(relative)
+      })
+    }
+  }
+
+  /**
+   * Hook to handle injecting stylesheet before
+   * a Section is serialized
+   * @param  {document} doc
+   * @param  {Section} section
+   * @private
+   */
+  injectStylesheet(doc: Document, _section: Section): void {
+    const style = doc.createElement('link')
+    style.setAttribute('type', 'text/css')
+    style.setAttribute('rel', 'stylesheet')
+    style.setAttribute('href', this.settings.stylesheet!)
+    doc.getElementsByTagName('head')[0]!.appendChild(style)
+  }
+
+  /**
+   * Hook to handle injecting scripts before
+   * a Section is serialized
+   * @param  {document} doc
+   * @param  {Section} section
+   * @private
+   */
+  injectScript(doc: Document, _section: Section): void {
+    const script = doc.createElement('script')
+    script.setAttribute('type', 'text/javascript')
+    script.setAttribute('src', this.settings.script!)
+    script.textContent = ' ' // Needed to prevent self closing tag
+    doc.getElementsByTagName('head')[0]!.appendChild(script)
+  }
+
+  /**
+   * Hook to handle the document identifier before
+   * a Section is serialized
+   * @param  {document} doc
+   * @param  {Section} section
+   * @private
+   */
+  injectIdentifier(doc: Document, _section: Section): void {
+    const ident = this.book.packaging.metadata.identifier
+    const meta = doc.createElement('meta')
+    meta.setAttribute('name', 'dc.relation.ispartof')
+    if (ident) {
+      meta.setAttribute('content', ident)
+    }
+    doc.getElementsByTagName('head')[0]!.appendChild(meta)
+  }
+}
+
+//-- Enable binding events to Renderer
+EventEmitter(Rendition.prototype)
+
+export default Rendition

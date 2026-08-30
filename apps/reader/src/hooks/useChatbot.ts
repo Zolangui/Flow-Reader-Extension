@@ -370,11 +370,6 @@ export function useChatbot() {
         !isCloudProvider || settings.includeAnnotationsInRemotePrompts
           ? (book.annotations.map((a) => a.notes).filter(Boolean) as string[])
           : []
-      const definitions =
-        !isCloudProvider || settings.includeDefinitionsInRemotePrompts
-          ? book.definitions || []
-          : []
-
       for (let qi = 0; qi < queries.length; qi++) {
         const q = queries[qi]
         const w = qi === 0 ? 1.0 : 0.65
@@ -478,7 +473,7 @@ export function useChatbot() {
             depth,
             lang,
             canSearchDeeper,
-            { annotations, definitions },
+            { annotations },
           )
 
       if (multiIntentMode) {

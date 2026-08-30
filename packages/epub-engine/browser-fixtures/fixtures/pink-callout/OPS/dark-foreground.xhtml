@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Inherited dark foreground presentation fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        font: 18px/1.65 Georgia, serif;
+      }
+
+      body {
+        padding: 42px;
+        color: #000000;
+      }
+
+      #foreground-prose,
+      #foreground-prose em {
+        color: #000000;
+      }
+
+      .accent {
+        color: #ec008c;
+        font-size: 2.4em;
+        font-weight: 700;
+      }
+
+      .explicit-gray {
+        color: #373737;
+      }
+
+      .color-four {
+        color: oklch(35% 0.16 300);
+      }
+
+      .pseudo-risk {
+        color: #f8fafc;
+      }
+
+      .pseudo-risk::before {
+        content: 'Pseudo: ';
+        color: #000000;
+      }
+
+      .author-marker {
+        color: #4b9fff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1><span class="accent">Texto herdado da publicação</span></h1>
+    <p id="foreground-prose">
+      <em>
+        Este parágrafo herda uma cor preta autoral que deixa de ser legível
+        quando a superfície do leitor passa a ser escura. Mesmo sendo o único
+        bloco de prosa desta página curta, ele contém evidência textual
+        suficiente para o modo Adaptive reparar somente a herança, sem
+        substituir o rosa escolhido pelo autor, reescrever o XHTML original ou
+        alterar a geometria do Atlas.
+      </em>
+    </p>
+    <section class="explicit-gray">
+      <p>
+        <em id="explicit-foreground">
+          Este segundo bloco possui cinza escuro explicitamente definido pelo
+          EPUB. O reparo local deve tornÃ¡-lo legÃ­vel sem transformar cores
+          cromÃ¡ticas nem aplicar uma substituiÃ§Ã£o global baseada apenas no
+          comeÃ§o do capÃ­tulo.
+        </em>
+      </p>
+    </section>
+    <p id="color-four-foreground" class="color-four">
+      This CSS Color 4 paragraph remains serialized as OKLCH in some browsers;
+      the engine must classify its painted sRGB result consistently.
+    </p>
+    <p class="pseudo-risk">
+      generated text cannot yet receive a source-addressed repair.
+    </p>
+    <p>
+      <span
+        id="author-marker-collision"
+        class="author-marker"
+        data-lumen-explicit-text-target="e0-0"
+        >An authored attribute must not collide with renderer markers.</span
+      >
+    </p>
+  </body>
+</html>
