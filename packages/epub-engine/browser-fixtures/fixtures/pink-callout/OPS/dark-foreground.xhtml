@@ -34,6 +34,22 @@
         color: oklch(35% 0.16 300);
       }
 
+      .neutral-primary {
+        color: #111111;
+      }
+
+      .neutral-secondary {
+        color: #202020;
+      }
+
+      .neutral-caption {
+        color: #303030;
+      }
+
+      .neutral-muted {
+        color: #404040;
+      }
+
       .pseudo-risk {
         color: #f8fafc;
       }
@@ -73,6 +89,22 @@
     <p id="color-four-foreground" class="color-four">
       This CSS Color 4 paragraph remains serialized as OKLCH in some browsers;
       the engine must classify its painted sRGB result consistently.
+    </p>
+    <p id="neutral-primary" class="neutral-primary">
+      Primary neutral prose must remain perceptually stronger than the secondary
+      publication text after dark-theme adaptation.
+    </p>
+    <p id="neutral-secondary" class="neutral-secondary">
+      Secondary neutral prose must retain its authored place in the visual
+      hierarchy instead of collapsing onto the primary gray.
+    </p>
+    <p id="neutral-caption" class="neutral-caption">
+      Neutral caption text provides a third meaningful level for the palette
+      fidelity gate to preserve across real browser painting.
+    </p>
+    <p id="neutral-muted" class="neutral-muted">
+      Muted neutral text remains readable but intentionally weaker than the
+      other repaired foreground levels.
     </p>
     <p class="pseudo-risk">
       generated text cannot yet receive a source-addressed repair.

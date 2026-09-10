@@ -13,6 +13,7 @@ import {
   resolveComputedSrgbColor,
   type SrgbColor,
 } from './presentation-color'
+import { isPresentationRuntimeNode } from './presentation-marker'
 import {
   createSourceTreeAddress,
   getSourceTreeRoot,
@@ -20,9 +21,8 @@ import {
   walkSourceTree,
   type SourceTreeAddress,
 } from './source-tree'
-import { isPresentationRuntimeNode } from './presentation-marker'
 
-export const PRESENTATION_HEALTH_MODEL_VERSION = 11 as const
+export const PRESENTATION_HEALTH_MODEL_VERSION = 12 as const
 /**
  * Hard ceiling for a complete presentation evidence map.
  *
@@ -34,7 +34,13 @@ export const PRESENTATION_HEALTH_MODEL_VERSION = 11 as const
  * exceptional document.
  */
 export const MAX_PRESENTATION_HEALTH_ELEMENTS = 8192 as const
-export const PRESENTATION_LEGIBILITY_MODEL_VERSION = 4 as const
+export const PRESENTATION_LEGIBILITY_MODEL_VERSION = 5 as const
+const FLAT_PRESENTATION_STROKE_STYLES = new Set([
+  'solid',
+  'dashed',
+  'dotted',
+  'double',
+])
 
 export type PresentationElementRole =
   | 'root'
@@ -91,6 +97,18 @@ export type PresentationObservedStyle = {
   direction: string
   listStyleType: string
   listStyleImage: string
+  borderTopColor: string
+  borderTopStyle: string
+  borderTopWidth: string
+  borderRightColor: string
+  borderRightStyle: string
+  borderRightWidth: string
+  borderBottomColor: string
+  borderBottomStyle: string
+  borderBottomWidth: string
+  borderLeftColor: string
+  borderLeftStyle: string
+  borderLeftWidth: string
 }
 
 export type PresentationObservedGeometry = {
@@ -210,6 +228,10 @@ export type PresentationLegibilitySummary = {
   knownLowContrastCodePoints: number
   unknownPaintSamples: number
   unknownPaintCodePoints: number
+  visibleStrokeSides: number
+  provenReadableStrokeSides: number
+  knownLowContrastStrokeSides: number
+  unknownStrokeSides: number
   unknownPaintByReason: Readonly<
     Partial<Record<PresentationPaintUnknownReason, number>>
   >
@@ -219,6 +241,7 @@ export type PresentationLegibilitySummary = {
 export type SummarizePresentationLegibilityOptions = {
   healthMap: PresentationHealthMap
   minimumTextContrast?: number
+  minimumStrokeContrast?: number
 }
 
 function clipsOverflow(value: string): boolean {
@@ -392,6 +415,18 @@ function captureStyle(style: CSSStyleDeclaration): PresentationObservedStyle {
     direction: normalized(style.direction, 'ltr'),
     listStyleType: normalized(style.listStyleType, 'none'),
     listStyleImage: normalized(style.listStyleImage, 'none'),
+    borderTopColor: style.borderTopColor,
+    borderTopStyle: normalized(style.borderTopStyle, 'none'),
+    borderTopWidth: normalized(style.borderTopWidth, '0px'),
+    borderRightColor: style.borderRightColor,
+    borderRightStyle: normalized(style.borderRightStyle, 'none'),
+    borderRightWidth: normalized(style.borderRightWidth, '0px'),
+    borderBottomColor: style.borderBottomColor,
+    borderBottomStyle: normalized(style.borderBottomStyle, 'none'),
+    borderBottomWidth: normalized(style.borderBottomWidth, '0px'),
+    borderLeftColor: style.borderLeftColor,
+    borderLeftStyle: normalized(style.borderLeftStyle, 'none'),
+    borderLeftWidth: normalized(style.borderLeftWidth, '0px'),
   }
 }
 
@@ -1041,6 +1076,11 @@ export function summarizePresentationLegibility(
     Number.isFinite(options.minimumTextContrast)
       ? Math.min(21, Math.max(1, options.minimumTextContrast))
       : 4.5
+  const minimumStrokeContrast =
+    typeof options.minimumStrokeContrast === 'number' &&
+    Number.isFinite(options.minimumStrokeContrast)
+      ? Math.min(21, Math.max(1, options.minimumStrokeContrast))
+      : 3
   let visibleTextSamples = 0
   let visibleTextCodePoints = 0
   let nonVisibleTextSamples = 0
@@ -1051,6 +1091,10 @@ export function summarizePresentationLegibility(
   let knownLowContrastCodePoints = 0
   let unknownPaintSamples = 0
   let unknownPaintCodePoints = 0
+  let visibleStrokeSides = 0
+  let provenReadableStrokeSides = 0
+  let knownLowContrastStrokeSides = 0
+  let unknownStrokeSides = 0
   const unknownPaintByReason: Partial<
     Record<PresentationPaintUnknownReason, number>
   > = {}
@@ -1128,11 +1172,67 @@ export function summarizePresentationLegibility(
       options.healthMap.pseudoTextSamples
   }
 
+  const strokeSides = [
+    ['top', 'borderTopColor', 'borderTopStyle', 'borderTopWidth'],
+    ['right', 'borderRightColor', 'borderRightStyle', 'borderRightWidth'],
+    ['bottom', 'borderBottomColor', 'borderBottomStyle', 'borderBottomWidth'],
+    ['left', 'borderLeftColor', 'borderLeftStyle', 'borderLeftWidth'],
+  ] as const
+  for (const observation of options.healthMap.observations) {
+    if (
+      observation.style.display === 'none' ||
+      observation.style.visibility !== 'visible' ||
+      observation.style.contentVisibility === 'hidden' ||
+      observation.geometry.clientRectCount === 0 ||
+      (observation.geometry.width <= 0 && observation.geometry.height <= 0)
+    ) {
+      continue
+    }
+    for (const [side, colorKey, styleKey, widthKey] of strokeSides) {
+      const borderStyle = observation.style[styleKey].toLowerCase()
+      const borderWidth = Number.parseFloat(observation.style[widthKey])
+      const sideLength =
+        side === 'top' || side === 'bottom'
+          ? observation.geometry.width
+          : observation.geometry.height
+      if (
+        !FLAT_PRESENTATION_STROKE_STYLES.has(borderStyle) ||
+        !Number.isFinite(borderWidth) ||
+        borderWidth <= 0 ||
+        sideLength <= 0
+      ) {
+        continue
+      }
+      const color = resolveComputedSrgbColor(
+        observation.style[colorKey],
+        observation.element,
+      )
+      // A fully transparent authored border is absent paint, not unresolved
+      // legibility debt. Partial alpha and an unknown backdrop remain debt.
+      if (color && color.a <= 0.001) continue
+      visibleStrokeSides += 1
+      if (!color || color.a < 0.999 || observation.paint.kind !== 'known') {
+        unknownStrokeSides += 1
+        continue
+      }
+      if (
+        contrastRatio(color, observation.paint.background) >=
+        minimumStrokeContrast
+      ) {
+        provenReadableStrokeSides += 1
+      } else {
+        knownLowContrastStrokeSides += 1
+      }
+    }
+  }
+
   const complete =
     !options.healthMap.truncated &&
     !options.healthMap.pseudoTextTruncated &&
     knownLowContrastSamples === 0 &&
-    unknownPaintSamples === 0
+    unknownPaintSamples === 0 &&
+    knownLowContrastStrokeSides === 0 &&
+    unknownStrokeSides === 0
   return Object.freeze({
     modelVersion: PRESENTATION_LEGIBILITY_MODEL_VERSION,
     complete,
@@ -1147,6 +1247,10 @@ export function summarizePresentationLegibility(
     knownLowContrastCodePoints,
     unknownPaintSamples,
     unknownPaintCodePoints,
+    visibleStrokeSides,
+    provenReadableStrokeSides,
+    knownLowContrastStrokeSides,
+    unknownStrokeSides,
     unknownPaintByReason: Object.freeze({ ...unknownPaintByReason }),
   })
 }

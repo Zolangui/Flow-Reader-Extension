@@ -345,7 +345,11 @@ implementation may evolve behind an incremented operation version.
 ```ts
 type PresentationOperationKind =
   | 'remap-palette'
+  | 'activate-author-theme'
   | 'restore-visible-text'
+  | 'restore-explicit-text'
+  | 'restore-list-marker'
+  | 'restore-visible-stroke'
   | 'contain-overflow'
   | 'fit-wide-region'
   | 'preserve-media-aspect-ratio'
@@ -722,7 +726,9 @@ The initial corpus contains synthetic, redistributable fixtures for:
    and popups; no attempt executes in either probe or visible view;
 10. authored `prefers-color-scheme` rules when OS and Lumen themes disagree;
 11. fragmentation defects visible only after CSS multicolumn pagination; and
-12. Clean View mappings for annotations, search, footnotes, MathML, ruby,
+12. low-contrast semantic strokes, including form lines and table grids that
+    inherit `currentColor`; and
+13. Clean View mappings for annotations, search, footnotes, MathML, ruby,
     figures, tables, SVG text, and accessibility metadata.
 
 Commercial EPUB files are not committed. Real books may be used locally to

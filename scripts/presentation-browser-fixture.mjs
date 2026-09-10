@@ -45,11 +45,14 @@ const allFixtureCases = [
   'clipped-prose',
   'occluded-callout',
   'lazy-image-section',
+  'stroke-contrast',
 ]
 const privateFixtureCases = [
   'private-large-index',
   'private-cover',
   'private-dark-audit',
+  'private-light-audit',
+  'private-stroke-audit',
   'private-chapter-boundary',
 ]
 
@@ -332,7 +335,7 @@ async function startServer(bundleDirectory) {
           ? 'application/xhtml+xml; charset=utf-8'
           : contentType(filePath),
         'Content-Security-Policy':
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self'",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self' blob:",
       })
       response.end(body)
     } catch (error) {

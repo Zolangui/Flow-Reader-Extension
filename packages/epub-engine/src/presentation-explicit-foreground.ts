@@ -3,6 +3,7 @@ import {
   contrastRatio,
   oklchToSrgbGamut,
   parseSrgbColor,
+  relativeLuminance,
   resolveComputedSrgbColor,
   srgbToHex,
   srgbToOklch,
@@ -15,6 +16,16 @@ import {
   type PresentationHealthMap,
   type PresentationHealthObservation,
 } from './presentation-health'
+import {
+  applyReversibleInlineStyle,
+  suspendInlineStyles,
+  type ReversibleInlineStyleOverride,
+} from './presentation-inline-style'
+import {
+  createPresentationRuntimeMarker,
+  markPresentationRuntimeNode,
+} from './presentation-marker'
+import { boundedInteger, boundedNumber } from './presentation-options'
 import type {
   PresentationFinding,
   PresentationOperationValidators,
@@ -24,29 +35,22 @@ import type {
   ValidationFailure,
   ValidationRecordInput,
 } from './presentation-plan'
-import { boundedInteger, boundedNumber } from './presentation-options'
-import {
-  createPresentationRuntimeMarker,
-  markPresentationRuntimeNode,
-} from './presentation-marker'
-import {
-  applyReversibleInlineStyle,
-  suspendInlineStyles,
-  type ReversibleInlineStyleOverride,
-} from './presentation-inline-style'
 import {
   createSourceNodeSignature,
   getSourceTreeRoot,
   resolveSourceTreeAddress,
 } from './source-tree'
 
-export const EXPLICIT_FOREGROUND_ANALYZER_VERSION = 9 as const
+export const EXPLICIT_FOREGROUND_ANALYZER_VERSION = 10 as const
 export const RESTORE_EXPLICIT_TEXT_OPERATION_VERSION = 3 as const
-export const EXPLICIT_FOREGROUND_VALIDATOR_VERSION = 5 as const
+export const EXPLICIT_FOREGROUND_VALIDATOR_VERSION = 6 as const
 
 const LAYER_ATTRIBUTE = 'data-lumen-presentation-layer'
 const TARGET_ATTRIBUTE = 'data-lumen-explicit-text-target'
 const HEX_COLOR = /^#[0-9a-f]{6}$/
+const NEUTRAL_CHROMA_LIMIT = 0.035
+const MINIMUM_MEANINGFUL_NEUTRAL_LIGHTNESS_GAP = 0.025
+const NEUTRAL_HIERARCHY_RETENTION = 0.65
 
 export type RestoreExplicitTextParameters = {
   schemaVersion: 2
@@ -96,6 +100,19 @@ type AppliedTarget = {
   root: Element
   samples: AppliedSample[]
   parameters: RestoreExplicitTextParameters
+}
+
+type CandidateGroup = {
+  root: PresentationHealthObservation
+  sourceText: SrgbColor
+  samples: PresentationHealthObservation[]
+}
+
+type PreparedCandidateGroup = {
+  group: CandidateGroup
+  backgrounds: SrgbColor[]
+  targetContrast: number
+  targetText: SrgbColor
 }
 
 export type AppliedExplicitForegroundLayer = {
@@ -214,6 +231,79 @@ function readableForeground(
     }
   }
   return undefined
+}
+
+/**
+ * Neutral publication palettes often encode hierarchy using several dark
+ * grays intended for paper. Solving every gray independently against a dark
+ * reader canvas collapses all of them onto the same minimum-contrast gray.
+ * Reflect meaningful source-lightness differences across the canvas while
+ * retaining only as much separation as the target gamut safely permits.
+ */
+function preserveNeutralHierarchy(candidates: PreparedCandidateGroup[]): void {
+  const families = new Map<string, PreparedCandidateGroup[]>()
+  for (const candidate of candidates) {
+    if (srgbToOklch(candidate.group.sourceText).c > NEUTRAL_CHROMA_LIMIT) {
+      continue
+    }
+    const luminances = candidate.backgrounds.map(relativeLuminance)
+    const darkSurface = luminances.every((luminance) => luminance <= 0.22)
+    const lightSurface = luminances.every((luminance) => luminance >= 0.78)
+    if (!darkSurface && !lightSurface) continue
+    const surfaces = candidate.backgrounds.map(srgbToHex).sort()
+    const key = `${darkSurface ? 'dark' : 'light'}:${
+      candidate.targetContrast
+    }:${surfaces.join(',')}`
+    const family = families.get(key) ?? []
+    family.push(candidate)
+    families.set(key, family)
+  }
+
+  for (const [key, family] of families) {
+    if (family.length < 2) continue
+    const sourceLightness = family.map(
+      (candidate) => srgbToOklch(candidate.group.sourceText).l,
+    )
+    const minimum = Math.min(...sourceLightness)
+    const maximum = Math.max(...sourceLightness)
+    const span = maximum - minimum
+    if (span < MINIMUM_MEANINGFUL_NEUTRAL_LIGHTNESS_GAP) continue
+
+    const darkSurface = key.startsWith('dark:')
+    const weakestIndex = darkSurface
+      ? sourceLightness.indexOf(maximum)
+      : sourceLightness.indexOf(minimum)
+    const baseline = srgbToOklch(family[weakestIndex]!.targetText).l
+    const available = darkSurface ? 1 - baseline : baseline
+    const retention = Math.min(
+      NEUTRAL_HIERARCHY_RETENTION,
+      Math.max(0, (available * 0.98) / span),
+    )
+    if (retention <= 0) continue
+
+    family.forEach((candidate, index) => {
+      const source = srgbToOklch(candidate.group.sourceText)
+      const distanceFromWeakest = darkSurface
+        ? maximum - sourceLightness[index]!
+        : sourceLightness[index]! - minimum
+      const targetLightness = darkSurface
+        ? baseline + distanceFromWeakest * retention
+        : baseline - distanceFromWeakest * retention
+      const target = oklchToSrgbGamut({
+        l: Math.min(1, Math.max(0, targetLightness)),
+        c: source.c,
+        h: source.h,
+      })
+      if (
+        candidate.backgrounds.every(
+          (background) =>
+            contrastRatio(target, background) >= candidate.targetContrast,
+        )
+      ) {
+        candidate.targetText = target
+      }
+    })
+  }
 }
 
 function colorHex(value: string, element: Element): string | undefined {
@@ -348,11 +438,6 @@ export async function analyzeExplicitForegroundContrast(
     return true
   })
 
-  type CandidateGroup = {
-    root: PresentationHealthObservation
-    sourceText: SrgbColor
-    samples: PresentationHealthObservation[]
-  }
   const localGroups = new Map<string, CandidateGroup>()
   for (const observation of eligible) {
     const root = localColorRoot(observation, health)
@@ -403,20 +488,8 @@ export async function analyzeExplicitForegroundContrast(
     existing.samples.push(...local.samples)
   }
 
-  const findings: PresentationFinding[] = []
-  const patches: PresentationPatch[] = []
-  let inspectedGroups = 0
+  const preparedGroups: PreparedCandidateGroup[] = []
   for (const group of groups.values()) {
-    throwIfAborted(options.signal)
-    if (patches.length >= maxCandidates) break
-    inspectedGroups += 1
-    const observedTextCodePoints = group.samples.reduce(
-      (total, sample) => total + sample.directTextCodePoints,
-      0,
-    )
-    // Complete paint evidence, a stable source address and post-application
-    // validation are the safety boundaries. Text length is not: a short title
-    // or publisher label can be the only unreadable text on a page.
     const backgrounds = group.samples.flatMap((sample) =>
       sample.paint.kind === 'known' ? [sample.paint.background] : [],
     )
@@ -432,7 +505,32 @@ export async function analyzeExplicitForegroundContrast(
       backgrounds,
       targetContrast,
     )
-    if (!targetText) continue
+    if (targetText) {
+      preparedGroups.push({
+        group,
+        backgrounds,
+        targetContrast,
+        targetText,
+      })
+    }
+  }
+  preserveNeutralHierarchy(preparedGroups)
+
+  const findings: PresentationFinding[] = []
+  const patches: PresentationPatch[] = []
+  let inspectedGroups = 0
+  for (const prepared of preparedGroups) {
+    throwIfAborted(options.signal)
+    if (patches.length >= maxCandidates) break
+    inspectedGroups += 1
+    const { group, backgrounds, targetText } = prepared
+    const observedTextCodePoints = group.samples.reduce(
+      (total, sample) => total + sample.directTextCodePoints,
+      0,
+    )
+    // Complete paint evidence, a stable source address and post-application
+    // validation are the safety boundaries. Text length is not: a short title
+    // or publisher label can be the only unreadable text on a page.
     const sourceNode = resolveSourceTreeAddress(
       options.sourceDocument,
       group.root.address,
@@ -514,7 +612,7 @@ export async function analyzeExplicitForegroundContrast(
       conflicts: [],
     })
   }
-  const truncatedGroups = Math.max(0, groups.size - inspectedGroups)
+  const truncatedGroups = Math.max(0, preparedGroups.length - inspectedGroups)
   return {
     findings,
     patches,
@@ -748,6 +846,69 @@ export function restoreExplicitForegroundLayer(document: Document): void {
   appliedLayers.get(document)?.restore()
 }
 
+function neutralHierarchyMetrics(targets: readonly AppliedTarget[]): {
+  comparedPairs: number
+  collisions: number
+  orderingViolations: number
+} {
+  const families = new Map<string, RestoreExplicitTextParameters[]>()
+  for (const target of targets) {
+    const source = parseSrgbColor(target.parameters.sourceText)
+    if (!source || srgbToOklch(source).c > NEUTRAL_CHROMA_LIMIT) continue
+    // Mirror the analysis eligibility: hierarchy preservation only runs on
+    // families whose surfaces are uniformly dark or uniformly light. Mixed
+    // surfaces legitimately collapse to independent per-surface repairs, so
+    // judging them here would flag collisions the analysis never attempted
+    // to separate.
+    const surfaces = [...target.parameters.surfaces].sort()
+    const luminances = surfaces
+      .map((surface) => parseSrgbColor(surface))
+      .map((color) => (color ? relativeLuminance(color) : undefined))
+    if (luminances.some((luminance) => luminance === undefined)) continue
+    const darkSurface = luminances.every((luminance) => luminance! <= 0.22)
+    const lightSurface = luminances.every((luminance) => luminance! >= 0.78)
+    if (!darkSurface && !lightSurface) continue
+    // The analysis keeps normal and chromatic foregrounds in separate
+    // contrast tiers. Those tiers may legitimately choose different target
+    // lightnesses for the same source palette, so fidelity comparisons must
+    // never treat them as one hierarchy family.
+    const key = `${darkSurface ? 'dark' : 'light'}:${
+      target.parameters.canvas
+    }:${target.parameters.minimumTextContrast}:${surfaces.join(',')}`
+    const family = families.get(key) ?? []
+    family.push(target.parameters)
+    families.set(key, family)
+  }
+
+  let comparedPairs = 0
+  let collisions = 0
+  let orderingViolations = 0
+  for (const family of families.values()) {
+    const ordered = family
+      .map((parameters) => ({
+        parameters,
+        source: srgbToOklch(parseSrgbColor(parameters.sourceText)!),
+        target: srgbToOklch(parseSrgbColor(parameters.targetText)!),
+      }))
+      .sort((left, right) => left.source.l - right.source.l)
+    for (let index = 1; index < ordered.length; index += 1) {
+      const stronger = ordered[index - 1]!
+      const weaker = ordered[index]!
+      const sourceGap = weaker.source.l - stronger.source.l
+      if (sourceGap < MINIMUM_MEANINGFUL_NEUTRAL_LIGHTNESS_GAP) continue
+      comparedPairs += 1
+      if (stronger.parameters.targetText === weaker.parameters.targetText) {
+        collisions += 1
+      }
+      const requiredTargetGap = Math.min(0.01, sourceGap * 0.25)
+      if (stronger.target.l - weaker.target.l < requiredTargetGap) {
+        orderingViolations += 1
+      }
+    }
+  }
+  return { comparedPairs, collisions, orderingViolations }
+}
+
 export function validateRestoredExplicitText(
   layer: AppliedExplicitForegroundLayer,
 ): { input: ValidationRecordInput } {
@@ -823,6 +984,9 @@ export function validateRestoredExplicitText(
   const geometryStable =
     sameGeometry(enabledGeometry, publishedGeometry) &&
     sameGeometry(enabledGeometry, restoredGeometry)
+  const hierarchy = neutralHierarchyMetrics(layer.targets)
+  const fidelityProven =
+    hierarchy.collisions === 0 && hierarchy.orderingViolations === 0
   const paintProven =
     !health.truncated &&
     !layer.publishedHealth.truncated &&
@@ -842,6 +1006,23 @@ export function validateRestoredExplicitText(
         targetGroups: layer.targets.length,
         truncated: health.truncated,
         collateralColorChanges,
+      },
+    },
+    {
+      // Informational only: hierarchy collisions or ordering slips degrade
+      // fidelity, but the adapted result is still strictly more readable
+      // than the published low-contrast text. Rejecting the whole layer
+      // here would restore the very illegibility the repair removed, so
+      // this probe reports metrics without gating acceptance.
+      id: 'explicit-text-neutral-hierarchy',
+      probeVersion: EXPLICIT_FOREGROUND_VALIDATOR_VERSION,
+      passed: true,
+      confidence: fidelityProven ? 0.97 : 0.5,
+      metrics: {
+        comparedPairs: hierarchy.comparedPairs,
+        collisions: hierarchy.collisions,
+        orderingViolations: hierarchy.orderingViolations,
+        fidelityProven,
       },
     },
   ]

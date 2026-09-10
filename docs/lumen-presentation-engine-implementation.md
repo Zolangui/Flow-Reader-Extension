@@ -211,6 +211,47 @@ debt rather than being rewritten. Author-theme admission includes the same
 marker evidence; a theme that leaves markers unreadable is rejected before the
 independent contrast fallback is attempted.
 
+### Phase 7.16 semantic-stroke closure
+
+Flat authored borders are terminal paint samples too. The health map records
+the physical color, style, and width of each visible border side, and the
+legibility ledger classifies solid, dashed, dotted, and double strokes against
+their proven opaque surface at the non-text graphics floor of 3:1. Transparent
+or absent borders remain absent; partially composited and otherwise ambiguous
+paint remains declared debt.
+
+Known low-contrast sides produce a bounded `restore-visible-stroke` operation.
+It addresses every exact source side, preserves the authored hue and chroma
+while changing only OKLCH lightness, writes only the corresponding inline
+`border-*-color`, and validates both final contrast and unchanged geometry.
+The operation is paint-only, reversible, idempotent, and does not enter the
+Atlas geometry identity. A synthetic worksheet/table fixture and the local
+private-corpus regression run in both Firefox and Chromium/Edge.
+
+### Phase 7.17 paint-layer composition
+
+Marker application precedes inherited and explicit foreground layers. This is
+an explicit composition rule: repairing direct text on an `li` can also change
+its `currentColor`-based `::marker`; that incidental improvement must not make
+the independently planned marker evidence appear stale and reject the entire
+section. The marker keeps its dedicated pseudo layer, while the foreground
+repair remains responsible only for glyph paint.
+
+### Phase 7.18 neutral palette fidelity
+
+Explicit foreground analysis now treats related neutral colors as a palette
+when they share the same proven surfaces. Meaningful source-lightness
+differences are reflected across the reader canvas, so primary prose,
+secondary text, captions, and muted labels cannot all collapse onto the same
+minimum-contrast gray. The validation gate independently rejects target-color
+collisions or ordering loss before admission. Chromatic groups continue to
+preserve their authored hue and available chroma.
+
+The private browser harness also supports a light-canvas audit. This records
+every admitted operation across a real EPUB, making scheme-neutral stroke,
+marker, or explicit-text repairs observable instead of reporting only the
+generic `adapted` outcome.
+
 ## Activation policy
 
 `DEFAULT_ADAPTIVE_PRESENTATION_ENABLED` is `false`. A host must explicitly
@@ -264,7 +305,8 @@ The phase-4/5/6/7 vertical slices share one complete synthetic EPUB and a real
 browser harness in `packages/epub-engine/browser-fixtures`. Its spine items
 exercise the pink palette repair, wide-table geometry repair, native
 author-theme activation, explicit/inherited dark foreground repair,
-undeclared browser-default foreground and list-marker repair, adversarial
+undeclared browser-default foreground, list-marker and semantic-stroke repair,
+adversarial
 evidence cases, and a large index. The dark-foreground case is forced into a two-up spread and resolves the
 audited iframe by `sectionIndex`, never by `getContents()[0]`. The harness
 renders Published and Adaptive side by side and checks contrast, explicit

@@ -2,10 +2,12 @@ import { webcrypto } from 'node:crypto'
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { parseSrgbColor, srgbToOklch } from '../src/presentation-color'
 import {
   analyzeExplicitForegroundContrast,
   analyzeExplicitForegroundForDarkTheme,
   applyRestoreExplicitTextPlan,
+  isRestoreExplicitTextParameters,
   RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
   validateRestoredExplicitText,
 } from '../src/presentation-explicit-foreground'
@@ -86,6 +88,144 @@ describe('explicit foreground repair', () => {
     iframe.remove()
   })
 
+  it('preserves meaningful hierarchy between distinct neutral foregrounds', async () => {
+    const markup = `<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><style>
+      body { background: transparent; }
+      .primary { color: #111111; }
+      .secondary { color: #202020; }
+      .caption { color: #303030; }
+      .muted { color: #404040; }
+    </style></head><body>
+      <p class="primary">Primary publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="secondary">Secondary publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="caption">Caption publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="muted">Muted publication prose is deliberately long enough to provide stable direct text evidence.</p>
+    </body></html>`
+    const source = parseXML(markup, 'application/xhtml+xml')
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const rendered = iframe.contentDocument!
+    rendered.documentElement.innerHTML = source.documentElement.innerHTML
+    installVisibleLayout(rendered)
+
+    const analysis = await analyzeExplicitForegroundContrast({
+      sourceDocument: source,
+      renderedDocument: rendered,
+      spineIndex: 12,
+      canvasColor: '#111827',
+    })
+    const mappings = analysis.patches.flatMap((patch) =>
+      isRestoreExplicitTextParameters(patch.parameters)
+        ? [patch.parameters]
+        : [],
+    )
+    const targetColors = new Set(mappings.map((mapping) => mapping.targetText))
+    const ordered = [...mappings].sort(
+      (left, right) =>
+        srgbToOklch(parseSrgbColor(left.sourceText)!).l -
+        srgbToOklch(parseSrgbColor(right.sourceText)!).l,
+    )
+    const targetLightness = ordered.map(
+      (mapping) => srgbToOklch(parseSrgbColor(mapping.targetText)!).l,
+    )
+
+    expect(mappings).toHaveLength(4)
+    expect(targetColors.size).toBe(4)
+    expect(targetLightness).toEqual([...targetLightness].sort((a, b) => b - a))
+
+    const plan = await createPresentationPlan(
+      {
+        schemaVersion: PRESENTATION_PLAN_SCHEMA_VERSION,
+        engineVersion: 'neutral-hierarchy-test',
+        mode: 'adaptive',
+        publicationRevision: 'neutral-hierarchy-fixture',
+        analysisFingerprint: 'explicit-neutral-hierarchy-v1',
+        renderingContextFingerprint: 'dark',
+        findings: analysis.findings,
+        patches: analysis.patches,
+      },
+      RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
+    )
+    const layer = await applyRestoreExplicitTextPlan(
+      plan!,
+      source,
+      rendered,
+      12,
+    )
+    expect(validateRestoredExplicitText(layer!).input.passed).toBe(true)
+    layer!.restore()
+    iframe.remove()
+  })
+
+  it('mirrors a meaningful light neutral hierarchy onto a light canvas', async () => {
+    const markup = `<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><style>
+      body { background: transparent; }
+      .primary { color: #eeeeee; }
+      .secondary { color: #dddddd; }
+      .caption { color: #cccccc; }
+      .muted { color: #bbbbbb; }
+    </style></head><body>
+      <p class="primary">Primary publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="secondary">Secondary publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="caption">Caption publication prose is deliberately long enough to provide stable direct text evidence.</p>
+      <p class="muted">Muted publication prose is deliberately long enough to provide stable direct text evidence.</p>
+    </body></html>`
+    const source = parseXML(markup, 'application/xhtml+xml')
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const rendered = iframe.contentDocument!
+    rendered.documentElement.innerHTML = source.documentElement.innerHTML
+    installVisibleLayout(rendered)
+
+    const analysis = await analyzeExplicitForegroundContrast({
+      sourceDocument: source,
+      renderedDocument: rendered,
+      spineIndex: 13,
+      canvasColor: '#ffffff',
+    })
+    const mappings = analysis.patches.flatMap((patch) =>
+      isRestoreExplicitTextParameters(patch.parameters)
+        ? [patch.parameters]
+        : [],
+    )
+    const targetColors = new Set(mappings.map((mapping) => mapping.targetText))
+    const ordered = [...mappings].sort(
+      (left, right) =>
+        srgbToOklch(parseSrgbColor(left.sourceText)!).l -
+        srgbToOklch(parseSrgbColor(right.sourceText)!).l,
+    )
+    const targetLightness = ordered.map(
+      (mapping) => srgbToOklch(parseSrgbColor(mapping.targetText)!).l,
+    )
+
+    expect(mappings).toHaveLength(4)
+    expect(targetColors.size).toBe(4)
+    expect(targetLightness).toEqual([...targetLightness].sort((a, b) => b - a))
+
+    const plan = await createPresentationPlan(
+      {
+        schemaVersion: PRESENTATION_PLAN_SCHEMA_VERSION,
+        engineVersion: 'neutral-light-hierarchy-test',
+        mode: 'adaptive',
+        publicationRevision: 'neutral-light-hierarchy-fixture',
+        analysisFingerprint: 'explicit-neutral-light-hierarchy-v1',
+        renderingContextFingerprint: 'light',
+        findings: analysis.findings,
+        patches: analysis.patches,
+      },
+      RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
+    )
+    const layer = await applyRestoreExplicitTextPlan(
+      plan!,
+      source,
+      rendered,
+      13,
+    )
+    expect(validateRestoredExplicitText(layer!).input.passed).toBe(true)
+    layer!.restore()
+    iframe.remove()
+  })
+
   it('outranks a more-specific host link rule that also uses important', async () => {
     const markup = `<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><style>
       body { color: #000000; background: transparent; }
@@ -125,12 +265,7 @@ describe('explicit foreground repair', () => {
       },
       RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
     )
-    const layer = await applyRestoreExplicitTextPlan(
-      plan!,
-      source,
-      rendered,
-      6,
-    )
+    const layer = await applyRestoreExplicitTextPlan(plan!, source, rendered, 6)
 
     expect(rendered.defaultView!.getComputedStyle(link).color).not.toBe(
       hostLinkColor,

@@ -1,5 +1,6 @@
 import { canonicalJson } from './canonical-json'
 import type Contents from './contents'
+import { sectionLayoutName } from './layout'
 import type IframeView from './managers/views/iframe'
 import type {
   PaginationLifecycle,
@@ -10,6 +11,80 @@ import {
   PAGINATION_ARTIFACTS_VERSION,
   recordPaginationGeometryArtifact,
 } from './pagination-lifecycle'
+import {
+  ACTIVATE_AUTHOR_THEME_OPERATION_VERSION,
+  analyzeAuthorTheme,
+  applyAuthorThemePlan,
+  AUTHOR_THEME_OPERATION_VALIDATORS,
+  AUTHOR_THEME_RESOLVER_VERSION,
+  AUTHOR_THEME_VALIDATOR_VERSION,
+  restoreAuthorThemeLayer,
+  validateAppliedAuthorTheme,
+  waitForAuthorThemeGeometryStability,
+  type AppliedAuthorThemeLayer,
+} from './presentation-author-theme'
+import {
+  PRESENTATION_COLOR_MODEL_VERSION,
+  parseSrgbColor,
+  srgbToHex,
+} from './presentation-color'
+import {
+  analyzeExplicitForegroundContrast,
+  applyRestoreExplicitTextPlan,
+  EXPLICIT_FOREGROUND_ANALYZER_VERSION,
+  RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
+  restoreExplicitForegroundLayer,
+  validateRestoredExplicitText,
+  type AppliedExplicitForegroundLayer,
+} from './presentation-explicit-foreground'
+import {
+  analyzeInheritedForegroundForDarkTheme,
+  applyRestoreVisibleTextPlan,
+  INHERITED_FOREGROUND_ANALYZER_VERSION,
+  RESTORE_VISIBLE_TEXT_OPERATION_VALIDATORS,
+  restoreInheritedForegroundLayer,
+  validateRestoredVisibleText,
+  type AppliedInheritedForegroundLayer,
+  type InheritedForegroundRuntimeEvidence,
+} from './presentation-foreground'
+import {
+  analyzeWideTableOverflow,
+  applyContainOverflowPlan,
+  CONTAIN_OVERFLOW_OPERATION_VALIDATORS,
+  CONTAIN_OVERFLOW_OPERATION_VERSION,
+  CONTAIN_OVERFLOW_VALIDATOR_VERSION,
+  restoreGeometryPresentationLayer,
+  validateContainedOverflowPlan,
+  waitForOverflowGeometryStability,
+  WIDE_TABLE_ANALYZER_VERSION,
+  type AppliedOverflowLayer,
+} from './presentation-geometry'
+import {
+  createPresentationHealthMap,
+  MAX_PRESENTATION_HEALTH_ELEMENTS,
+  PRESENTATION_HEALTH_MODEL_VERSION,
+  PRESENTATION_LEGIBILITY_MODEL_VERSION,
+  summarizePresentationLegibility,
+  type PresentationLegibilitySummary,
+} from './presentation-health'
+import {
+  analyzeListMarkerContrast,
+  applyRestoreListMarkerPlan,
+  LIST_MARKER_ANALYZER_VERSION,
+  RESTORE_LIST_MARKER_OPERATION_VALIDATORS,
+  restoreListMarkerLayer,
+  validateRestoredListMarkers,
+  type AppliedListMarkerLayer,
+} from './presentation-list-marker'
+import {
+  analyzeOpaquePaletteForDarkTheme,
+  applyRemapPalettePlan,
+  OPAQUE_PALETTE_ANALYZER_VERSION,
+  REMAP_PALETTE_OPERATION_VALIDATORS,
+  restorePresentationLayer,
+  validateAppliedPalettePlan,
+  type AppliedPresentationLayer,
+} from './presentation-palette'
 import {
   admitPresentationPlan,
   createPresentationPlan,
@@ -24,80 +99,6 @@ import {
   type ValidationRecordInput,
 } from './presentation-plan'
 import {
-  analyzeOpaquePaletteForDarkTheme,
-  applyRemapPalettePlan,
-  OPAQUE_PALETTE_ANALYZER_VERSION,
-  REMAP_PALETTE_OPERATION_VALIDATORS,
-  restorePresentationLayer,
-  validateAppliedPalettePlan,
-  type AppliedPresentationLayer,
-} from './presentation-palette'
-import {
-  PRESENTATION_COLOR_MODEL_VERSION,
-  parseSrgbColor,
-  srgbToHex,
-} from './presentation-color'
-import {
-  createPresentationHealthMap,
-  MAX_PRESENTATION_HEALTH_ELEMENTS,
-  PRESENTATION_HEALTH_MODEL_VERSION,
-  PRESENTATION_LEGIBILITY_MODEL_VERSION,
-  summarizePresentationLegibility,
-  type PresentationLegibilitySummary,
-} from './presentation-health'
-import {
-  analyzeWideTableOverflow,
-  applyContainOverflowPlan,
-  CONTAIN_OVERFLOW_OPERATION_VALIDATORS,
-  CONTAIN_OVERFLOW_OPERATION_VERSION,
-  CONTAIN_OVERFLOW_VALIDATOR_VERSION,
-  restoreGeometryPresentationLayer,
-  validateContainedOverflowPlan,
-  waitForOverflowGeometryStability,
-  WIDE_TABLE_ANALYZER_VERSION,
-  type AppliedOverflowLayer,
-} from './presentation-geometry'
-import {
-  ACTIVATE_AUTHOR_THEME_OPERATION_VERSION,
-  analyzeAuthorTheme,
-  applyAuthorThemePlan,
-  AUTHOR_THEME_OPERATION_VALIDATORS,
-  AUTHOR_THEME_RESOLVER_VERSION,
-  AUTHOR_THEME_VALIDATOR_VERSION,
-  restoreAuthorThemeLayer,
-  validateAppliedAuthorTheme,
-  waitForAuthorThemeGeometryStability,
-  type AppliedAuthorThemeLayer,
-} from './presentation-author-theme'
-import {
-  analyzeInheritedForegroundForDarkTheme,
-  applyRestoreVisibleTextPlan,
-  INHERITED_FOREGROUND_ANALYZER_VERSION,
-  RESTORE_VISIBLE_TEXT_OPERATION_VALIDATORS,
-  restoreInheritedForegroundLayer,
-  validateRestoredVisibleText,
-  type AppliedInheritedForegroundLayer,
-  type InheritedForegroundRuntimeEvidence,
-} from './presentation-foreground'
-import {
-  analyzeExplicitForegroundContrast,
-  applyRestoreExplicitTextPlan,
-  EXPLICIT_FOREGROUND_ANALYZER_VERSION,
-  RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
-  restoreExplicitForegroundLayer,
-  validateRestoredExplicitText,
-  type AppliedExplicitForegroundLayer,
-} from './presentation-explicit-foreground'
-import {
-  analyzeListMarkerContrast,
-  applyRestoreListMarkerPlan,
-  LIST_MARKER_ANALYZER_VERSION,
-  RESTORE_LIST_MARKER_OPERATION_VALIDATORS,
-  restoreListMarkerLayer,
-  validateRestoredListMarkers,
-  type AppliedListMarkerLayer,
-} from './presentation-list-marker'
-import {
   DEFAULT_PRESENTATION_RUN_BUDGET,
   PresentationRun,
   PresentationRunBudgetError,
@@ -106,14 +107,22 @@ import {
   type PresentationRunBudget,
 } from './presentation-run'
 import {
+  analyzeStrokeContrast,
+  applyRestoreVisibleStrokePlan,
+  RESTORE_VISIBLE_STROKE_OPERATION_VALIDATORS,
+  restoreStrokeContrastLayer,
+  STROKE_CONTRAST_ANALYZER_VERSION,
+  validateRestoredVisibleStrokes,
+  type AppliedStrokeContrastLayer,
+} from './presentation-stroke'
+import {
   SOURCE_SIGNATURE_VERSION,
   SOURCE_TREE_MODEL_VERSION,
 } from './source-tree'
-import { sectionLayoutName } from './layout'
 import type { RequestFunction } from './types'
 import type Hook from './utils/hook'
 
-export const LUMEN_PRESENTATION_ENGINE_VERSION = 'lpe-v1-phase7.15' as const
+export const LUMEN_PRESENTATION_ENGINE_VERSION = 'lpe-v1-phase7.18' as const
 export const LUMEN_PRESENTATION_GEOMETRY_PRODUCER_ID =
   'lumen-presentation-engine' as const
 /** Bump only when geometry-producing semantics change; paint must not. */
@@ -208,6 +217,7 @@ export type LumenPresentationCandidate = {
   foregroundLayer?: AppliedInheritedForegroundLayer
   explicitForegroundLayer?: AppliedExplicitForegroundLayer
   listMarkerLayer?: AppliedListMarkerLayer
+  strokeLayer?: AppliedStrokeContrastLayer
   paletteLayer?: AppliedPresentationLayer
   geometryLayer?: AppliedOverflowLayer
   releaseAbort: () => void
@@ -218,6 +228,7 @@ const PRESENTATION_OPERATION_VALIDATORS = {
   ...RESTORE_VISIBLE_TEXT_OPERATION_VALIDATORS,
   ...RESTORE_EXPLICIT_TEXT_OPERATION_VALIDATORS,
   ...RESTORE_LIST_MARKER_OPERATION_VALIDATORS,
+  ...RESTORE_VISIBLE_STROKE_OPERATION_VALIDATORS,
   ...REMAP_PALETTE_OPERATION_VALIDATORS,
   ...CONTAIN_OVERFLOW_OPERATION_VALIDATORS,
 }
@@ -439,6 +450,7 @@ export class LumenPresentationEngine {
       candidate.geometryLayer?.restore()
       candidate.paletteLayer?.restore()
       candidate.listMarkerLayer?.restore()
+      candidate.strokeLayer?.restore()
       candidate.explicitForegroundLayer?.restore()
       candidate.foregroundLayer?.restore()
       candidate.authorThemeLayer?.restore()
@@ -452,6 +464,7 @@ export class LumenPresentationEngine {
         restoreGeometryPresentationLayer(document)
       restorePresentationLayer(document)
       restoreListMarkerLayer(document)
+      restoreStrokeContrastLayer(document)
       restoreExplicitForegroundLayer(document)
       restoreInheritedForegroundLayer(document)
       const restoredAuthorGeometry = restoreAuthorThemeLayer(document)
@@ -463,6 +476,7 @@ export class LumenPresentationEngine {
       restoreGeometryPresentationLayer(contents.document)
       restorePresentationLayer(contents.document)
       restoreListMarkerLayer(contents.document)
+      restoreStrokeContrastLayer(contents.document)
       restoreExplicitForegroundLayer(contents.document)
       restoreInheritedForegroundLayer(contents.document)
       restoreAuthorThemeLayer(contents.document)
@@ -561,6 +575,7 @@ export class LumenPresentationEngine {
       candidate.geometryLayer?.restore()
       candidate.paletteLayer?.restore()
       candidate.listMarkerLayer?.restore()
+      candidate.strokeLayer?.restore()
       candidate.explicitForegroundLayer?.restore()
       candidate.foregroundLayer?.restore()
       candidate.authorThemeLayer?.restore()
@@ -675,6 +690,10 @@ export class LumenPresentationEngine {
         knownLowContrastCodePoints: 0,
         unknownPaintSamples: 0,
         unknownPaintCodePoints: 0,
+        visibleStrokeSides: 0,
+        provenReadableStrokeSides: 0,
+        knownLowContrastStrokeSides: 0,
+        unknownStrokeSides: 0,
         unknownPaintByReason: Object.freeze({}),
         analysisFailure: 'health-map-unavailable',
       })
@@ -689,6 +708,7 @@ export class LumenPresentationEngine {
     candidate.geometryLayer?.restore()
     candidate.paletteLayer?.restore()
     candidate.listMarkerLayer?.restore()
+    candidate.strokeLayer?.restore()
     candidate.explicitForegroundLayer?.restore()
     candidate.foregroundLayer?.restore()
     candidate.authorThemeLayer?.restore()
@@ -737,6 +757,7 @@ export class LumenPresentationEngine {
     restoreGeometryPresentationLayer(context.contents.document)
     restorePresentationLayer(context.contents.document)
     restoreListMarkerLayer(context.contents.document)
+    restoreStrokeContrastLayer(context.contents.document)
     restoreExplicitForegroundLayer(context.contents.document)
     restoreInheritedForegroundLayer(context.contents.document)
     restoreAuthorThemeLayer(context.contents.document)
@@ -775,7 +796,7 @@ export class LumenPresentationEngine {
         {
           publicationRevision: policy.publicationRevision,
           spineIndex: context.section.index ?? -1,
-          analysisFingerprint: `${policy.analysisFingerprint}|source:${SOURCE_TREE_MODEL_VERSION}.${SOURCE_SIGNATURE_VERSION}|health:${PRESENTATION_HEALTH_MODEL_VERSION}|author-theme:${AUTHOR_THEME_RESOLVER_VERSION}|foreground:${INHERITED_FOREGROUND_ANALYZER_VERSION}|explicit-foreground:${EXPLICIT_FOREGROUND_ANALYZER_VERSION}|list-marker:${LIST_MARKER_ANALYZER_VERSION}|palette:${OPAQUE_PALETTE_ANALYZER_VERSION}|wide-table:${WIDE_TABLE_ANALYZER_VERSION}`,
+          analysisFingerprint: `${policy.analysisFingerprint}|source:${SOURCE_TREE_MODEL_VERSION}.${SOURCE_SIGNATURE_VERSION}|health:${PRESENTATION_HEALTH_MODEL_VERSION}|author-theme:${AUTHOR_THEME_RESOLVER_VERSION}|foreground:${INHERITED_FOREGROUND_ANALYZER_VERSION}|explicit-foreground:${EXPLICIT_FOREGROUND_ANALYZER_VERSION}|list-marker:${LIST_MARKER_ANALYZER_VERSION}|stroke:${STROKE_CONTRAST_ANALYZER_VERSION}|palette:${OPAQUE_PALETTE_ANALYZER_VERSION}|wide-table:${WIDE_TABLE_ANALYZER_VERSION}`,
           renderingContextFingerprint: `${
             policy.renderingContextFingerprint
           }|${canonicalJson({
@@ -874,6 +895,24 @@ export class LumenPresentationEngine {
         0,
         remainingAfterAuthorTheme - listMarkerAnalysis.patches.length,
       )
+      const strokeAnalysis = await run.wait(
+        analyzeStrokeContrast({
+          sourceDocument,
+          renderedDocument: context.contents.document,
+          spineIndex: run.identity.spineIndex,
+          canvasColor: policy.canvasColor,
+          signal: run.signal,
+          maxCandidates: Math.min(4, remainingAfterListMarkers),
+          healthMap,
+        }),
+      )
+      for (const diagnostic of strokeAnalysis.diagnostics) {
+        run.record(`stroke:${diagnostic}`)
+      }
+      const remainingAfterStrokes = Math.max(
+        0,
+        remainingAfterListMarkers - strokeAnalysis.patches.length,
+      )
       const explicitForegroundAnalysis = await run.wait(
         analyzeExplicitForegroundContrast({
           sourceDocument,
@@ -882,7 +921,7 @@ export class LumenPresentationEngine {
           canvasColor: policy.canvasColor,
           signal: run.signal,
           minimumTextContrast: policy.minimumTextContrast,
-          maxCandidates: remainingAfterListMarkers,
+          maxCandidates: remainingAfterStrokes,
           healthMap,
         }),
       )
@@ -896,10 +935,12 @@ export class LumenPresentationEngine {
         findings: [
           ...explicitForegroundAnalysis.findings,
           ...listMarkerAnalysis.findings,
+          ...strokeAnalysis.findings,
         ],
         patches: [
           ...explicitForegroundAnalysis.patches,
           ...listMarkerAnalysis.patches,
+          ...strokeAnalysis.patches,
         ],
       }
       if (policy.colorScheme === 'dark') {
@@ -912,7 +953,7 @@ export class LumenPresentationEngine {
             signal: run.signal,
             minimumTextContrast: policy.minimumTextContrast,
             maxInspectedElements: MAX_PRESENTATION_HEALTH_ELEMENTS - 1,
-            maxCandidates: remainingAfterListMarkers,
+            maxCandidates: remainingAfterStrokes,
             healthMap,
           }),
         )
@@ -938,8 +979,7 @@ export class LumenPresentationEngine {
             maxInspectedElements: 512,
             maxCandidates: Math.max(
               0,
-              remainingAfterListMarkers -
-                selectedForegroundAnalysis.patches.length,
+              remainingAfterStrokes - selectedForegroundAnalysis.patches.length,
             ),
             minimumTextContrast: policy.minimumTextContrast,
             healthMap,
@@ -949,11 +989,13 @@ export class LumenPresentationEngine {
           findings: [
             ...selectedForegroundAnalysis.findings,
             ...listMarkerAnalysis.findings,
+            ...strokeAnalysis.findings,
             ...paletteAnalysis.findings,
           ],
           patches: [
             ...selectedForegroundAnalysis.patches,
             ...listMarkerAnalysis.patches,
+            ...strokeAnalysis.patches,
             ...paletteAnalysis.patches,
           ],
         }
@@ -1032,6 +1074,38 @@ export class LumenPresentationEngine {
         ),
       )
       coordinator.assertCurrent(run)
+      const strokeLayer = plan.patches.some(
+        (patch) => patch.operation === 'restore-visible-stroke',
+      )
+        ? await run.wait(
+            applyRestoreVisibleStrokePlan(
+              plan,
+              sourceDocument,
+              context.contents.document,
+              run.identity.spineIndex,
+              run.signal,
+            ),
+          )
+        : undefined
+      coordinator.assertCurrent(run)
+      // Marker evidence is captured from Published paint. Apply its dedicated
+      // pseudo layer before foreground repairs: changing an LI's currentColor
+      // can incidentally make ::marker readable and must not invalidate the
+      // independently planned marker operation.
+      const listMarkerLayer = plan.patches.some(
+        (patch) => patch.operation === 'restore-list-marker',
+      )
+        ? await run.wait(
+            applyRestoreListMarkerPlan(
+              plan,
+              sourceDocument,
+              context.contents.document,
+              run.identity.spineIndex,
+              run.signal,
+            ),
+          )
+        : undefined
+      coordinator.assertCurrent(run)
       const foregroundLayer = plan.patches.some(
         (patch) => patch.operation === 'restore-visible-text',
       )
@@ -1052,20 +1126,6 @@ export class LumenPresentationEngine {
       )
         ? await run.wait(
             applyRestoreExplicitTextPlan(
-              plan,
-              sourceDocument,
-              context.contents.document,
-              run.identity.spineIndex,
-              run.signal,
-            ),
-          )
-        : undefined
-      coordinator.assertCurrent(run)
-      const listMarkerLayer = plan.patches.some(
-        (patch) => patch.operation === 'restore-list-marker',
-      )
-        ? await run.wait(
-            applyRestoreListMarkerPlan(
               plan,
               sourceDocument,
               context.contents.document,
@@ -1104,6 +1164,7 @@ export class LumenPresentationEngine {
         foregroundLayer,
         explicitForegroundLayer,
         listMarkerLayer,
+        strokeLayer,
         paletteLayer,
         releaseAbort: () => undefined,
       }
@@ -1116,6 +1177,7 @@ export class LumenPresentationEngine {
       )
       restorePresentationLayer(context.contents.document)
       restoreListMarkerLayer(context.contents.document)
+      restoreStrokeContrastLayer(context.contents.document)
       restoreExplicitForegroundLayer(context.contents.document)
       restoreInheritedForegroundLayer(context.contents.document)
       const restoredAuthorGeometry = restoreAuthorThemeLayer(
@@ -1195,6 +1257,24 @@ export class LumenPresentationEngine {
         candidate.authorThemeLayer && candidate.fallbackAnalysis
           ? candidate.fallbackAnalysis.patches.length
           : 0
+      const postPaginationStrokeAnalysis = await candidate.run.wait(
+        analyzeStrokeContrast({
+          sourceDocument: candidate.sourceDocument,
+          renderedDocument: context.contents.document,
+          spineIndex: candidate.run.identity.spineIndex,
+          canvasColor: candidate.policy.canvasColor,
+          signal: candidate.run.signal,
+          maxCandidates: Math.max(
+            0,
+            candidate.run.budget.maxCandidates -
+              candidate.run.candidateCount -
+              reservedFallbackCandidates,
+          ),
+        }),
+      )
+      postPaginationStrokeAnalysis.diagnostics.forEach((code) =>
+        candidate.run.record(`post-pagination-stroke:${code}`),
+      )
       const geometryAnalysis = await candidate.run.wait(
         analyzeWideTableOverflow({
           sourceDocument: candidate.sourceDocument,
@@ -1214,6 +1294,7 @@ export class LumenPresentationEngine {
             0,
             candidate.run.budget.maxCandidates -
               candidate.run.candidateCount -
+              postPaginationStrokeAnalysis.patches.length -
               reservedFallbackCandidates,
           ),
         }),
@@ -1224,9 +1305,15 @@ export class LumenPresentationEngine {
       candidate.coordinator.assertCurrent(candidate.run)
 
       let overflowGeometryStable = true
-      if (geometryAnalysis.patches.length > 0) {
+      if (
+        postPaginationStrokeAnalysis.patches.length > 0 ||
+        geometryAnalysis.patches.length > 0
+      ) {
+        postPaginationStrokeAnalysis.patches.forEach(() =>
+          candidate.run.consumeCandidate(),
+        )
         geometryAnalysis.patches.forEach(() => candidate.run.consumeCandidate())
-        candidate.run.transition('planning', 'post-pagination-geometry-plan')
+        candidate.run.transition('planning', 'post-pagination-plan')
         candidate.run.beginIteration()
         const plan = await candidate.run.wait(
           createPresentationPlan(
@@ -1240,10 +1327,12 @@ export class LumenPresentationEngine {
                 candidate.run.identity.renderingContextFingerprint,
               findings: [
                 ...(candidate.plan?.findings ?? []),
+                ...postPaginationStrokeAnalysis.findings,
                 ...geometryAnalysis.findings,
               ],
               patches: [
                 ...(candidate.plan?.patches ?? []),
+                ...postPaginationStrokeAnalysis.patches,
                 ...geometryAnalysis.patches,
               ],
             },
@@ -1280,6 +1369,7 @@ export class LumenPresentationEngine {
         candidate.geometryLayer?.restore()
         candidate.paletteLayer?.restore()
         candidate.listMarkerLayer?.restore()
+        candidate.strokeLayer?.restore()
         candidate.explicitForegroundLayer?.restore()
         candidate.foregroundLayer?.restore()
         candidate.authorThemeLayer?.restore()
@@ -1289,6 +1379,32 @@ export class LumenPresentationEngine {
         )
           ? await candidate.run.wait(
               applyAuthorThemePlan(
+                plan,
+                candidate.sourceDocument,
+                context.contents.document,
+                candidate.run.identity.spineIndex,
+                candidate.run.signal,
+              ),
+            )
+          : undefined
+        candidate.strokeLayer = plan.patches.some(
+          (patch) => patch.operation === 'restore-visible-stroke',
+        )
+          ? await candidate.run.wait(
+              applyRestoreVisibleStrokePlan(
+                plan,
+                candidate.sourceDocument,
+                context.contents.document,
+                candidate.run.identity.spineIndex,
+                candidate.run.signal,
+              ),
+            )
+          : undefined
+        candidate.listMarkerLayer = plan.patches.some(
+          (patch) => patch.operation === 'restore-list-marker',
+        )
+          ? await candidate.run.wait(
+              applyRestoreListMarkerPlan(
                 plan,
                 candidate.sourceDocument,
                 context.contents.document,
@@ -1324,19 +1440,6 @@ export class LumenPresentationEngine {
               ),
             )
           : undefined
-        candidate.listMarkerLayer = plan.patches.some(
-          (patch) => patch.operation === 'restore-list-marker',
-        )
-          ? await candidate.run.wait(
-              applyRestoreListMarkerPlan(
-                plan,
-                candidate.sourceDocument,
-                context.contents.document,
-                candidate.run.identity.spineIndex,
-                candidate.run.signal,
-              ),
-            )
-          : undefined
         candidate.paletteLayer = plan.patches.some(
           (patch) => patch.operation === 'remap-palette',
         )
@@ -1350,30 +1453,41 @@ export class LumenPresentationEngine {
               ),
             )
           : undefined
-        candidate.geometryLayer = await candidate.run.wait(
-          applyContainOverflowPlan(
-            plan,
-            candidate.sourceDocument,
-            context.contents.document,
-            candidate.run.identity.spineIndex,
-            candidate.run.signal,
-          ),
+        candidate.geometryLayer = plan.patches.some(
+          (patch) => patch.operation === 'contain-overflow',
         )
+          ? await candidate.run.wait(
+              applyContainOverflowPlan(
+                plan,
+                candidate.sourceDocument,
+                context.contents.document,
+                candidate.run.identity.spineIndex,
+                candidate.run.signal,
+              ),
+            )
+          : undefined
         this.armCandidateAbort(context, candidate)
         candidate.coordinator.assertCurrent(candidate.run)
-        candidate.run.transition('paginating', 'geometry-repagination')
-
-        // Repaginate the same hidden final iframe. expand(true) invalidates its
-        // cached text extent so the geometry-changing operation is observable.
-        context.layout.format(context.contents, context.section, context.axis)
-        context.view.expand(true)
-        overflowGeometryStable = await candidate.run.wait(
-          waitForOverflowGeometryStability(
-            candidate.geometryLayer,
-            candidate.run.signal,
-          ),
+        candidate.run.transition(
+          'paginating',
+          candidate.geometryLayer
+            ? 'geometry-repagination'
+            : 'post-pagination-paint',
         )
-        candidate.coordinator.assertCurrent(candidate.run)
+
+        if (candidate.geometryLayer) {
+          // Repaginate the same hidden final iframe. expand(true) invalidates
+          // its cached text extent so geometry changes are observable.
+          context.layout.format(context.contents, context.section, context.axis)
+          context.view.expand(true)
+          overflowGeometryStable = await candidate.run.wait(
+            waitForOverflowGeometryStability(
+              candidate.geometryLayer,
+              candidate.run.signal,
+            ),
+          )
+          candidate.coordinator.assertCurrent(candidate.run)
+        }
       }
 
       if (!candidate.plan) {
@@ -1427,6 +1541,11 @@ export class LumenPresentationEngine {
       if (candidate.listMarkerLayer) {
         validationInputs.push(
           validateRestoredListMarkers(candidate.listMarkerLayer).input,
+        )
+      }
+      if (candidate.strokeLayer) {
+        validationInputs.push(
+          validateRestoredVisibleStrokes(candidate.strokeLayer).input,
         )
       }
       if (candidate.geometryLayer) {
@@ -1511,6 +1630,7 @@ export class LumenPresentationEngine {
       candidate.geometryLayer?.restore()
       candidate.paletteLayer?.restore()
       candidate.listMarkerLayer?.restore()
+      candidate.strokeLayer?.restore()
       candidate.explicitForegroundLayer?.restore()
       candidate.foregroundLayer?.restore()
       candidate.authorThemeLayer?.restore()
@@ -1592,6 +1712,7 @@ export class LumenPresentationEngine {
       candidate.geometryLayer?.restore()
       candidate.paletteLayer?.restore()
       candidate.listMarkerLayer?.restore()
+      candidate.strokeLayer?.restore()
       candidate.explicitForegroundLayer?.restore()
       candidate.foregroundLayer?.restore()
       candidate.authorThemeLayer?.restore()
@@ -1599,6 +1720,7 @@ export class LumenPresentationEngine {
       candidate.foregroundLayer = undefined
       candidate.explicitForegroundLayer = undefined
       candidate.listMarkerLayer = undefined
+      candidate.strokeLayer = undefined
       candidate.paletteLayer = undefined
       candidate.geometryLayer = undefined
 
@@ -1703,6 +1825,32 @@ export class LumenPresentationEngine {
         return undefined
       }
       candidate.plan = plan
+      candidate.strokeLayer = plan.patches.some(
+        (patch) => patch.operation === 'restore-visible-stroke',
+      )
+        ? await run.wait(
+            applyRestoreVisibleStrokePlan(
+              plan,
+              candidate.sourceDocument,
+              context.contents.document,
+              run.identity.spineIndex,
+              run.signal,
+            ),
+          )
+        : undefined
+      candidate.listMarkerLayer = plan.patches.some(
+        (patch) => patch.operation === 'restore-list-marker',
+      )
+        ? await run.wait(
+            applyRestoreListMarkerPlan(
+              plan,
+              candidate.sourceDocument,
+              context.contents.document,
+              run.identity.spineIndex,
+              run.signal,
+            ),
+          )
+        : undefined
       candidate.foregroundLayer = plan.patches.some(
         (patch) => patch.operation === 'restore-visible-text',
       )
@@ -1722,19 +1870,6 @@ export class LumenPresentationEngine {
       )
         ? await run.wait(
             applyRestoreExplicitTextPlan(
-              plan,
-              candidate.sourceDocument,
-              context.contents.document,
-              run.identity.spineIndex,
-              run.signal,
-            ),
-          )
-        : undefined
-      candidate.listMarkerLayer = plan.patches.some(
-        (patch) => patch.operation === 'restore-list-marker',
-      )
-        ? await run.wait(
-            applyRestoreListMarkerPlan(
               plan,
               candidate.sourceDocument,
               context.contents.document,
@@ -1799,6 +1934,9 @@ export class LumenPresentationEngine {
           validateRestoredListMarkers(candidate.listMarkerLayer).input,
         )
       }
+      if (candidate.strokeLayer) {
+        inputs.push(validateRestoredVisibleStrokes(candidate.strokeLayer).input)
+      }
       if (candidate.geometryLayer) {
         inputs.push(
           validateContainedOverflowPlan(candidate.geometryLayer, geometryStable)
@@ -1860,6 +1998,7 @@ export class LumenPresentationEngine {
       candidate.geometryLayer?.restore()
       candidate.paletteLayer?.restore()
       candidate.listMarkerLayer?.restore()
+      candidate.strokeLayer?.restore()
       candidate.explicitForegroundLayer?.restore()
       candidate.foregroundLayer?.restore()
       candidate.releaseAbort()

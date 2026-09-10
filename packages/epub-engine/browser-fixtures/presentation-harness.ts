@@ -2,6 +2,7 @@ import ePub, {
   MAX_PRESENTATION_HEALTH_ELEMENTS,
   LumenPresentationEngine,
   LayoutMeasurementSession,
+  analyzeStrokeContrast,
   contrastRatio,
   createPresentationHealthMap,
   parseSrgbColor,
@@ -31,9 +32,12 @@ type FixtureCase =
   | 'clipped-prose'
   | 'occluded-callout'
   | 'lazy-image-section'
+  | 'stroke-contrast'
   | 'private-large-index'
   | 'private-cover'
   | 'private-dark-audit'
+  | 'private-light-audit'
+  | 'private-stroke-audit'
   | 'private-chapter-boundary'
 const requestedCase = new URLSearchParams(window.location.search).get('case')
 const requestedSpineIndex = Number.parseInt(
@@ -54,18 +58,27 @@ const TEST_CASE: FixtureCase =
   requestedCase === 'clipped-prose' ||
   requestedCase === 'occluded-callout' ||
   requestedCase === 'lazy-image-section' ||
+  requestedCase === 'stroke-contrast' ||
   requestedCase === 'private-large-index' ||
   requestedCase === 'private-cover' ||
   requestedCase === 'private-dark-audit' ||
+  requestedCase === 'private-light-audit' ||
+  requestedCase === 'private-stroke-audit' ||
   requestedCase === 'private-chapter-boundary'
     ? requestedCase
     : 'pink-callout'
 const ACTIVE_CANVAS_COLOR =
-  TEST_CASE === 'private-dark-audit' ? '#24292e' : CANVAS_COLOR
+  TEST_CASE === 'private-dark-audit' || TEST_CASE === 'private-stroke-audit'
+    ? '#24292e'
+    : TEST_CASE === 'private-light-audit'
+    ? '#ffffff'
+    : CANVAS_COLOR
 const FIXTURE_URL =
   TEST_CASE === 'private-large-index' ||
   TEST_CASE === 'private-cover' ||
   TEST_CASE === 'private-dark-audit' ||
+  TEST_CASE === 'private-light-audit' ||
+  TEST_CASE === 'private-stroke-audit' ||
   TEST_CASE === 'private-chapter-boundary'
     ? '/fixtures/private.epub'
     : '/fixtures/pink-callout/'
@@ -189,12 +202,21 @@ function fixtureSpineIndex(): number {
       return 11
     case 'lazy-image-section':
       return 12
+    case 'stroke-contrast':
+      return 13
     case 'private-large-index':
       return 27
     case 'private-chapter-boundary':
       return Number.isInteger(requestedSpineIndex) && requestedSpineIndex >= 0
         ? requestedSpineIndex
         : 12
+    case 'private-stroke-audit':
+    case 'private-light-audit':
+      return Number.isInteger(requestedSpineIndex) && requestedSpineIndex >= 0
+        ? requestedSpineIndex
+        : TEST_CASE === 'private-light-audit'
+        ? 4
+        : 0
     default:
       return 0
   }
@@ -289,6 +311,15 @@ function findColorFourForeground(rendition: Rendition): HTMLElement {
   return prose as HTMLElement
 }
 
+function neutralHierarchyColors(rendition: Rendition): string[] {
+  return [
+    '#neutral-primary',
+    '#neutral-secondary',
+    '#neutral-caption',
+    '#neutral-muted',
+  ].map((selector) => textColor(findFixtureElement(rendition, selector)))
+}
+
 function findDefaultForegroundProse(rendition: Rendition): HTMLElement {
   const prose = fixtureContents(rendition).document.querySelector(
     '#default-foreground-prose em',
@@ -379,6 +410,17 @@ function textColor(element: HTMLElement): string {
   return srgbToHex(color)
 }
 
+function borderColor(
+  element: HTMLElement,
+  side: 'top' | 'right' | 'bottom' | 'left',
+): string {
+  const style = element.ownerDocument.defaultView!.getComputedStyle(element)
+  const value = style.getPropertyValue(`border-${side}-color`)
+  const color = resolveComputedSrgbColor(value, element)
+  if (!color) throw new Error('Unable to parse fixture border color')
+  return srgbToHex(color)
+}
+
 function colorContrast(colors: { surface: string; text: string }): number {
   const surface = parseSrgbColor(colors.surface)!
   const text = parseSrgbColor(colors.text)!
@@ -405,6 +447,10 @@ async function renderFixture(
   const replacementsReady = book.replacementsReady?.then(() => {
     replacementsReadyAt = performance.now()
   })
+  // Archived publications render through blob-backed resource URLs. Wait for
+  // their replacement table before asking the rendition for a section so the
+  // browser audit observes the publication CSS, not a transient unstyled DOM.
+  await replacementsReady
   const width = Math.max(
     container.clientWidth,
     TEST_CASE === 'chapter-boundary' || TEST_CASE === 'private-chapter-boundary'
@@ -451,7 +497,10 @@ async function renderFixture(
       },
     })
   }
-  if (TEST_CASE === 'private-dark-audit') {
+  if (
+    TEST_CASE === 'private-dark-audit' ||
+    TEST_CASE === 'private-stroke-audit'
+  ) {
     // Match the reader's always-on navigation rule; otherwise a raw engine
     // audit misclassifies authored TOC links that Lumen renders in blue.
     rendition.themes.default({
@@ -476,7 +525,10 @@ async function renderFixture(
       resolvePolicy: () => ({
         enabled: true,
         mode: 'adaptive',
-        colorScheme: TEST_CASE === 'wide-table' ? 'light' : 'dark',
+        colorScheme:
+          TEST_CASE === 'wide-table' || TEST_CASE === 'private-light-audit'
+            ? 'light'
+            : 'dark',
         canvasColor:
           TEST_CASE === 'wide-table' ? '#f8fafc' : ACTIVE_CANVAS_COLOR,
         publicationRevision: `${TEST_CASE}-browser-fixture-v1`,
@@ -513,7 +565,6 @@ async function renderFixture(
     )
   }
   const displayFinishedAt = performance.now()
-  await replacementsReady
   if (adaptive) {
     await withTimeout(outcomePromise, 'Adaptive presentation outcome')
   }
@@ -677,12 +728,18 @@ async function runWideTableCase(
     },
     {
       id: 'geometry-hash',
-      label: 'Mudança entrou somente na identidade geométrica',
+      label: 'Paint e geometria entraram apenas nas identidades corretas',
       passed:
         Boolean(acceptedPlan) &&
         acceptedPlan!.paintPlanHash !== acceptedPlan!.geometryPlanHash &&
         acceptedPlan!.patches.every(
-          (patch) => !patch.effects.paint && patch.effects.geometry === 'local',
+          (patch) =>
+            (patch.operation === 'contain-overflow' &&
+              !patch.effects.paint &&
+              patch.effects.geometry === 'local') ||
+            (patch.operation === 'restore-visible-stroke' &&
+              patch.effects.paint &&
+              patch.effects.geometry === 'none'),
         ),
     },
     {
@@ -998,6 +1055,8 @@ async function runDarkForegroundCase(
   const adaptiveExplicitText = textColor(adaptiveExplicit)
   const publishedColorFourText = textColor(publishedColorFour)
   const adaptiveColorFourText = textColor(adaptiveColorFour)
+  const publishedNeutralHierarchy = neutralHierarchyColors(published.rendition)
+  const adaptiveNeutralHierarchy = neutralHierarchyColors(adaptive.rendition)
   const publishedAuthorMarkerText = textColor(publishedAuthorMarker)
   const adaptiveAuthorMarkerText = textColor(adaptiveAuthorMarker)
   const canvas = parseSrgbColor(CANVAS_COLOR)!
@@ -1053,12 +1112,21 @@ async function runDarkForegroundCase(
   const rollbackBeforeAccent = textColor(rollbackAccent)
   const rollbackBeforeExplicit = textColor(rollbackExplicit)
   const rollbackBeforeColorFour = textColor(rollbackColorFour)
+  const rollbackBeforeNeutralHierarchy = neutralHierarchyColors(
+    rollback.rendition,
+  )
   rollback.engine!.detach()
   await nextFrames(2)
   const rollbackAfterText = textColor(rollbackProse)
   const rollbackAfterAccent = textColor(rollbackAccent)
   const rollbackAfterExplicit = textColor(rollbackExplicit)
   const rollbackAfterColorFour = textColor(rollbackColorFour)
+  const rollbackAfterNeutralHierarchy = neutralHierarchyColors(
+    rollback.rendition,
+  )
+  const adaptiveNeutralLightness = adaptiveNeutralHierarchy.map(
+    (color) => srgbToOklch(parseSrgbColor(color)!).l,
+  )
 
   const measurementSession = new LayoutMeasurementSession({
     book: adaptive.book,
@@ -1106,7 +1174,7 @@ async function runDarkForegroundCase(
         adaptive.outcome?.status === 'adapted' &&
         acceptedPlan?.patches.filter(
           (patch) => patch.operation === 'restore-explicit-text',
-        ).length === 4,
+        ).length === 8,
       detail: adaptive.outcome?.status,
     },
     {
@@ -1153,6 +1221,22 @@ async function runDarkForegroundCase(
       )}:1 · Δh ${colorFourHueDelta.toFixed(1)}°`,
     },
     {
+      id: 'neutral-hierarchy-preserved',
+      label: 'Quatro tons neutros permaneceram distintos e ordenados',
+      passed:
+        new Set(adaptiveNeutralHierarchy).size === 4 &&
+        adaptiveNeutralHierarchy.every(
+          (color) => contrastRatio(parseSrgbColor(color)!, canvas) >= 7,
+        ) &&
+        adaptiveNeutralLightness.every(
+          (lightness, index) =>
+            index === 0 || adaptiveNeutralLightness[index - 1]! > lightness,
+        ),
+      detail: `${publishedNeutralHierarchy.join(
+        ',',
+      )} -> ${adaptiveNeutralHierarchy.join(',')}`,
+    },
+    {
       id: 'pseudo-debt',
       label: 'Pseudo-elemento ficou explicitamente registrado como dívida',
       passed:
@@ -1196,10 +1280,14 @@ async function runDarkForegroundCase(
         rollbackBeforeAccent === adaptiveAccentText &&
         rollbackBeforeExplicit === adaptiveExplicitText &&
         rollbackBeforeColorFour === adaptiveColorFourText &&
+        rollbackBeforeNeutralHierarchy.join(',') ===
+          adaptiveNeutralHierarchy.join(',') &&
         rollbackAfterText === publishedText &&
         rollbackAfterAccent === publishedAccentText &&
         rollbackAfterExplicit === publishedExplicitText &&
-        rollbackAfterColorFour === publishedColorFourText,
+        rollbackAfterColorFour === publishedColorFourText &&
+        rollbackAfterNeutralHierarchy.join(',') ===
+          publishedNeutralHierarchy.join(','),
     },
   ]
 
@@ -1389,6 +1477,292 @@ async function runDefaultForegroundCase(
       surface: CANVAS_COLOR,
       text: adaptiveText,
       contrast: adaptiveContrast,
+    },
+    plan: planSummary(adaptive.outcome),
+  })
+}
+
+async function runStrokeContrastCase(
+  published: RenderedFixture,
+  adaptive: RenderedFixture,
+  rollback: RenderedFixture,
+): Promise<void> {
+  const publishedLine = findFixtureElement(
+    published.rendition,
+    '#worksheet-line',
+  )
+  const adaptiveLine = findFixtureElement(adaptive.rendition, '#worksheet-line')
+  const publishedCell = findFixtureElement(published.rendition, '#stroke-cell')
+  const adaptiveCell = findFixtureElement(adaptive.rendition, '#stroke-cell')
+  const publishedLineColor = borderColor(publishedLine, 'bottom')
+  const adaptiveLineColor = borderColor(adaptiveLine, 'bottom')
+  const publishedCellColor = borderColor(publishedCell, 'top')
+  const adaptiveCellColor = borderColor(adaptiveCell, 'top')
+  const canvas = parseSrgbColor(CANVAS_COLOR)!
+  const publishedLineContrast = contrastRatio(
+    parseSrgbColor(publishedLineColor)!,
+    canvas,
+  )
+  const adaptiveLineContrast = contrastRatio(
+    parseSrgbColor(adaptiveLineColor)!,
+    canvas,
+  )
+  const publishedCellContrast = contrastRatio(
+    parseSrgbColor(publishedCellColor)!,
+    canvas,
+  )
+  const adaptiveCellContrast = contrastRatio(
+    parseSrgbColor(adaptiveCellColor)!,
+    canvas,
+  )
+  const acceptedPlan = adaptive.outcome?.accepted?.plan
+  const publishedSource = await published.book.spine
+    .get(fixtureSpineIndex())
+    ?.loadSource()
+  const publishedLedger = summarizePresentationLegibility({
+    healthMap: createPresentationHealthMap({
+      renderedDocument: fixtureContents(published.rendition).document,
+      spineIndex: fixtureSpineIndex(),
+      canvasColor: CANVAS_COLOR,
+      maxInspectedElements: MAX_PRESENTATION_HEALTH_ELEMENTS,
+    }),
+  })
+  const directStrokeAnalysis = publishedSource
+    ? await analyzeStrokeContrast({
+        sourceDocument: publishedSource,
+        renderedDocument: fixtureContents(published.rendition).document,
+        spineIndex: fixtureSpineIndex(),
+        canvasColor: CANVAS_COLOR,
+        maxCandidates: 8,
+      })
+    : undefined
+  const rollbackLine = findFixtureElement(rollback.rendition, '#worksheet-line')
+  const rollbackCell = findFixtureElement(rollback.rendition, '#stroke-cell')
+  const rollbackLineBefore = borderColor(rollbackLine, 'bottom')
+  const rollbackCellBefore = borderColor(rollbackCell, 'top')
+  const publishedLineStyle = publishedLine.getAttribute('style')
+  const publishedCellStyle = publishedCell.getAttribute('style')
+  rollback.engine!.detach()
+  await nextFrames(2)
+  const rollbackLineAfter = borderColor(rollbackLine, 'bottom')
+  const rollbackCellAfter = borderColor(rollbackCell, 'top')
+
+  const checks: Check[] = [
+    {
+      id: 'real-epub',
+      label: 'EPUB de traços semânticos foi aberto e paginado pelo motor',
+      passed:
+        hasFixtureContents(published.rendition) &&
+        hasFixtureContents(adaptive.rendition),
+    },
+    {
+      id: 'accepted',
+      label: 'Reparo de contraste gráfico passou pelo gate',
+      passed:
+        adaptive.outcome?.status === 'adapted' &&
+        acceptedPlan?.patches.some(
+          (patch) => patch.operation === 'restore-visible-stroke',
+        ) === true,
+      detail: `${adaptive.outcome?.status ?? 'no-outcome'}:${
+        adaptive.outcome?.reason ?? '-'
+      } · ${
+        acceptedPlan?.patches
+          .map(
+            (patch) =>
+              `${patch.operation}:${String(
+                patch.parameters.observedSides ?? '-',
+              )}`,
+          )
+          .join(', ') ?? 'no-plan'
+      } · published-strokes=${publishedLedger.visibleStrokeSides}/${
+        publishedLedger.knownLowContrastStrokeSides
+      } · direct=${
+        directStrokeAnalysis?.patches
+          .map(
+            (patch) =>
+              `${String(
+                patch.parameters.observedSides,
+              )}@${patch.target.source.sourcePath.join('.')}`,
+          )
+          .join(',') ?? 'none'
+      } · diagnostics=${
+        adaptive.outcome?.diagnostics.map((entry) => entry.code).join(',') ??
+        'none'
+      }`,
+    },
+    {
+      id: 'worksheet-line',
+      label: 'Linha de formulário atingiu contraste gráfico de 3:1',
+      passed: publishedLineContrast < 3 && adaptiveLineContrast >= 3,
+      detail: `${publishedLineContrast.toFixed(
+        2,
+      )}:1 -> ${adaptiveLineContrast.toFixed(2)}:1 · style=${
+        adaptiveLine.getAttribute('style') ?? 'none'
+      }`,
+    },
+    {
+      id: 'table-grid',
+      label: 'Grade da tabela atingiu contraste gráfico de 3:1',
+      passed: publishedCellContrast < 3 && adaptiveCellContrast >= 3,
+      detail: `${publishedCellContrast.toFixed(
+        2,
+      )}:1 -> ${adaptiveCellContrast.toFixed(2)}:1`,
+    },
+    {
+      id: 'paint-only',
+      label: 'Traços permaneceram paint-only e sem repaginação',
+      passed:
+        acceptedPlan?.patches.every(
+          (patch) =>
+            patch.effects.geometry === 'none' &&
+            patch.effects.semantics === 'none',
+        ) === true && adaptive.outcome?.validation?.geometryStable === true,
+    },
+    {
+      id: 'reversible',
+      label: 'Detach restaurou exatamente bordas e atributos inline',
+      passed:
+        rollbackLineBefore === adaptiveLineColor &&
+        rollbackCellBefore === adaptiveCellColor &&
+        rollbackLineAfter === publishedLineColor &&
+        rollbackCellAfter === publishedCellColor &&
+        rollbackLine.getAttribute('style') === publishedLineStyle &&
+        rollbackCell.getAttribute('style') === publishedCellStyle,
+      detail: `line ${rollbackLineBefore}->${rollbackLineAfter} style=${
+        rollbackLine.getAttribute('style') ?? 'none'
+      }; cell ${rollbackCellBefore}->${rollbackCellAfter} style=${
+        rollbackCell.getAttribute('style') ?? 'none'
+      }`,
+    },
+  ]
+
+  element('published-color').textContent = publishedLineColor
+  element('adaptive-color').textContent = adaptiveLineColor
+  publishResult({
+    status: checks.every((check) => check.passed) ? 'passed' : 'failed',
+    fixture: TEST_CASE,
+    browser: navigator.userAgent,
+    checks,
+    published: { surface: CANVAS_COLOR, text: publishedLineColor },
+    adaptive: {
+      surface: CANVAS_COLOR,
+      text: adaptiveLineColor,
+      contrast: adaptiveLineContrast,
+    },
+    plan: planSummary(adaptive.outcome),
+  })
+}
+
+function strokeLedger(fixture: RenderedFixture) {
+  return summarizePresentationLegibility({
+    healthMap: createPresentationHealthMap({
+      renderedDocument: fixtureContents(fixture.rendition).document,
+      spineIndex: fixtureSpineIndex(),
+      canvasColor: ACTIVE_CANVAS_COLOR,
+      maxInspectedElements: MAX_PRESENTATION_HEALTH_ELEMENTS,
+    }),
+  })
+}
+
+async function runPrivateStrokeAudit(
+  published: RenderedFixture,
+  adaptive: RenderedFixture,
+  rollback: RenderedFixture,
+): Promise<void> {
+  const publishedLedger = strokeLedger(published)
+  const adaptiveLedger = strokeLedger(adaptive)
+  const publishedDocument = fixtureContents(published.rendition).document
+  const authoredStrokeElements = Array.from(
+    publishedDocument.querySelectorAll('.class_s2ww, .class_s2xf, .class_s19u'),
+  )
+  const firstAuthoredStroke = authoredStrokeElements[0] as
+    | HTMLElement
+    | undefined
+  const firstAuthoredStrokeStyle = firstAuthoredStroke
+    ? publishedDocument.defaultView!.getComputedStyle(firstAuthoredStroke)
+    : undefined
+  const rollbackBefore = strokeLedger(rollback)
+  rollback.engine!.detach()
+  await nextFrames(2)
+  const rollbackAfter = strokeLedger(rollback)
+  const plan = adaptive.outcome?.accepted?.plan
+  const checks: Check[] = [
+    {
+      id: 'real-private-epub',
+      label: 'Capítulo real foi aberto e paginado nos dois modos',
+      passed:
+        hasFixtureContents(published.rendition) &&
+        hasFixtureContents(adaptive.rendition),
+    },
+    {
+      id: 'published-reproduction',
+      label: 'Published reproduziu traços abaixo de 3:1',
+      passed: publishedLedger.knownLowContrastStrokeSides > 0,
+      detail: `${publishedLedger.knownLowContrastStrokeSides}/${
+        publishedLedger.visibleStrokeSides
+      } lados · href=${
+        published.book.spine.get(fixtureSpineIndex())?.href ?? 'missing'
+      } · selectors=${authoredStrokeElements.length} · first=${
+        firstAuthoredStrokeStyle
+          ? `${firstAuthoredStrokeStyle.borderBottomStyle}/${firstAuthoredStrokeStyle.borderBottomWidth}/${firstAuthoredStrokeStyle.borderBottomColor}`
+          : 'none'
+      }`,
+    },
+    {
+      id: 'accepted-stroke-plan',
+      label: 'Adaptive admitiu uma operação de traço canônica',
+      passed:
+        adaptive.outcome?.status === 'adapted' &&
+        plan?.patches.some(
+          (patch) => patch.operation === 'restore-visible-stroke',
+        ) === true,
+      detail: `${adaptive.outcome?.status ?? 'no-outcome'}:${
+        adaptive.outcome?.reason ?? '-'
+      }`,
+    },
+    {
+      id: 'all-known-strokes-readable',
+      label: 'Nenhum traço conhecido permaneceu abaixo de 3:1',
+      passed:
+        adaptiveLedger.knownLowContrastStrokeSides === 0 &&
+        adaptiveLedger.unknownStrokeSides === 0,
+      detail: `low=${adaptiveLedger.knownLowContrastStrokeSides} unknown=${adaptiveLedger.unknownStrokeSides} visible=${adaptiveLedger.visibleStrokeSides}`,
+    },
+    {
+      id: 'paint-only',
+      label: 'Reparo de traço não alterou a geometria aceita',
+      passed:
+        plan?.patches
+          .filter((patch) => patch.operation === 'restore-visible-stroke')
+          .every(
+            (patch) => patch.effects.paint && patch.effects.geometry === 'none',
+          ) === true && adaptive.outcome?.validation?.geometryStable === true,
+    },
+    {
+      id: 'reversible',
+      label: 'Detach restaurou a dívida gráfica publicada',
+      passed:
+        rollbackBefore.knownLowContrastStrokeSides ===
+          adaptiveLedger.knownLowContrastStrokeSides &&
+        rollbackAfter.knownLowContrastStrokeSides ===
+          publishedLedger.knownLowContrastStrokeSides &&
+        rollbackAfter.visibleStrokeSides === publishedLedger.visibleStrokeSides,
+      detail: `${rollbackBefore.knownLowContrastStrokeSides} -> ${rollbackAfter.knownLowContrastStrokeSides}`,
+    },
+  ]
+  publishResult({
+    status: checks.every((check) => check.passed) ? 'passed' : 'failed',
+    fixture: TEST_CASE,
+    browser: navigator.userAgent,
+    checks,
+    published: {
+      surface: ACTIVE_CANVAS_COLOR,
+      text: `${publishedLedger.knownLowContrastStrokeSides} low strokes`,
+    },
+    adaptive: {
+      surface: ACTIVE_CANVAS_COLOR,
+      text: `${adaptiveLedger.knownLowContrastStrokeSides} low strokes`,
+      contrast: adaptiveLedger.knownLowContrastStrokeSides === 0 ? 3 : 0,
     },
     plan: planSummary(adaptive.outcome),
   })
@@ -2141,8 +2515,12 @@ async function runLazyImageCase(adaptive: RenderedFixture): Promise<void> {
   })
 }
 
-async function runPrivateDarkAudit(adaptive: RenderedFixture): Promise<void> {
+async function runPrivateContrastAudit(
+  adaptive: RenderedFixture,
+  colorScheme: 'light' | 'dark',
+): Promise<void> {
   const failures: string[] = []
+  const adaptations: string[] = []
   const total = adaptive.book.spine.spineItems.length
   let inspectedTextCodePoints = 0
 
@@ -2178,6 +2556,15 @@ async function runPrivateDarkAudit(adaptive: RenderedFixture): Promise<void> {
       (sum, observation) => sum + observation.directTextCodePoints,
       0,
     )
+    const outcome = [...adaptive.outcomes]
+      .reverse()
+      .find(
+        (candidate) =>
+          candidate.purpose === 'reader' && candidate.spineIndex === spineIndex,
+      )
+    if (outcome?.status === 'adapted') {
+      adaptations.push(`${spineIndex}:${summarizeAcceptedPatches(outcome)}`)
+    }
     if (health.truncated || lowContrast.length > 0) {
       const codePoints = lowContrast.reduce(
         (sum, observation) => sum + observation.directTextCodePoints,
@@ -2190,19 +2577,32 @@ async function runPrivateDarkAudit(adaptive: RenderedFixture): Promise<void> {
             : minimum,
         Number.POSITIVE_INFINITY,
       )
-      const outcome = [...adaptive.outcomes]
-        .reverse()
-        .find(
-          (candidate) =>
-            candidate.purpose === 'reader' &&
-            candidate.spineIndex === spineIndex,
-        )
       failures.push(
         `${spineIndex}:${lowContrast.length}/${codePoints}@${
           Number.isFinite(minimumContrast)
             ? minimumContrast.toFixed(2)
             : 'truncated'
-        }:${outcome?.status ?? 'no-outcome'}`,
+        }:${outcome?.status ?? 'no-outcome'}:${outcome?.reason ?? '-'}:${
+          outcome?.validation?.failureReasons
+            .map((failure) => failure.code)
+            .join(',') ?? '-'
+        }:${
+          outcome?.diagnostics
+            .slice(-6)
+            .map((diagnostic) => diagnostic.code)
+            .join(',') ?? '-'
+        }:${lowContrast
+          .slice(0, 3)
+          .map((observation) =>
+            observation.paint.kind === 'known'
+              ? `${observation.localName}@${observation.address.sourcePath.join(
+                  '.',
+                )}:${observation.style.color}->${srgbToHex(
+                  observation.paint.background,
+                )}`
+              : observation.localName,
+          )
+          .join(',')}`,
       )
     }
   }
@@ -2222,13 +2622,24 @@ async function runPrivateDarkAudit(adaptive: RenderedFixture): Promise<void> {
         ? failures.slice(0, 20).join(' | ')
         : 'sem falhas',
     },
+    {
+      id: 'adaptation-summary',
+      label: 'Toda intervenção aceita ficou registrada por operação',
+      passed: true,
+      detail: adaptations.length
+        ? adaptations.join(' | ')
+        : 'nenhum spine foi adaptado',
+    },
   ]
   publishResult({
     status: checks.every((check) => check.passed) ? 'passed' : 'failed',
     fixture: TEST_CASE,
     browser: navigator.userAgent,
     checks,
-    published: { surface: ACTIVE_CANVAS_COLOR, text: 'not-audited' },
+    published: {
+      surface: ACTIVE_CANVAS_COLOR,
+      text: `${colorScheme}-not-audited`,
+    },
     adaptive: {
       surface: ACTIVE_CANVAS_COLOR,
       text: failures.length ? failures.join(' | ') : 'all-readable',
@@ -2237,17 +2648,62 @@ async function runPrivateDarkAudit(adaptive: RenderedFixture): Promise<void> {
   })
 }
 
+/**
+ * Keep private-corpus reports useful without serializing an unbounded set of
+ * DOM addresses and samples. A long index can legitimately contain thousands
+ * of accepted patches; the report needs operation counts and representative
+ * color changes, not a second copy of the plan.
+ */
+function summarizeAcceptedPatches(outcome: LumenPresentationOutcome): string {
+  const byOperation = new Map<string, string[]>()
+  for (const patch of outcome.accepted?.plan.patches ?? []) {
+    const parameters = patch.parameters as Record<string, unknown>
+    const source =
+      typeof parameters.sourceText === 'string'
+        ? parameters.sourceText
+        : typeof parameters.sourceStroke === 'string'
+        ? parameters.sourceStroke
+        : undefined
+    const target =
+      typeof parameters.targetText === 'string'
+        ? parameters.targetText
+        : typeof parameters.targetStroke === 'string'
+        ? parameters.targetStroke
+        : undefined
+    const samples = byOperation.get(patch.operation) ?? []
+    if (source && target && samples.length < 3) {
+      samples.push(`${source}→${target}`)
+    }
+    byOperation.set(patch.operation, samples)
+  }
+  return [...byOperation]
+    .map(([operation, examples]) => {
+      const count = outcome.accepted?.plan.patches.filter(
+        (patch) => patch.operation === operation,
+      ).length
+      return examples.length
+        ? `${operation}×${count}[${examples.join(',')}]`
+        : `${operation}×${count}`
+    })
+    .join(';')
+}
+
 async function main(): Promise<void> {
   let published: RenderedFixture | undefined
   let adaptive: RenderedFixture | undefined
   let rollback: RenderedFixture | undefined
   try {
-    if (TEST_CASE === 'private-dark-audit') {
+    if (
+      TEST_CASE === 'private-dark-audit' ||
+      TEST_CASE === 'private-light-audit'
+    ) {
+      const colorScheme = TEST_CASE === 'private-light-audit' ? 'light' : 'dark'
       element('fixture-title').textContent = 'Auditoria de contraste do EPUB'
-      element('fixture-description').textContent =
-        'Cada spine e renderizado no modo Adaptive e validado contra o canvas escuro.'
+      element(
+        'fixture-description',
+      ).textContent = `Cada spine e renderizado no modo Adaptive e validado contra o canvas ${colorScheme}.`
       adaptive = await renderFixture(element('adaptive-reader'), true)
-      await runPrivateDarkAudit(adaptive)
+      await runPrivateContrastAudit(adaptive, colorScheme)
       return
     }
     if (
@@ -2321,6 +2777,15 @@ async function main(): Promise<void> {
       element('fixture-title').textContent = 'Imagem tardia e Atlas'
       element('fixture-description').textContent =
         'Uma resposta de imagem atrasada compara a geometria final do Reader com a medicao isolada do Atlas.'
+    } else if (TEST_CASE === 'stroke-contrast') {
+      element('fixture-title').textContent = 'Contraste de traços semânticos'
+      element('fixture-description').textContent =
+        'Linhas de formulário e grades de tabela que usam currentColor precisam continuar visíveis sobre o canvas escuro.'
+    } else if (TEST_CASE === 'private-stroke-audit') {
+      element('fixture-title').textContent =
+        'Auditoria de traços do EPUB privado'
+      element('fixture-description').textContent =
+        'Compara a dívida gráfica Published, o plano Adaptive e a restauração no capítulo real solicitado.'
     }
     published = await renderFixture(element('published-reader'), false)
     adaptive = await renderFixture(element('adaptive-reader'), true)
@@ -2340,6 +2805,14 @@ async function main(): Promise<void> {
     }
     if (TEST_CASE === 'default-foreground') {
       await runDefaultForegroundCase(published, adaptive, rollback)
+      return
+    }
+    if (TEST_CASE === 'stroke-contrast') {
+      await runStrokeContrastCase(published, adaptive, rollback)
+      return
+    }
+    if (TEST_CASE === 'private-stroke-audit') {
+      await runPrivateStrokeAudit(published, adaptive, rollback)
       return
     }
     if (TEST_CASE === 'large-index' || TEST_CASE === 'private-large-index') {

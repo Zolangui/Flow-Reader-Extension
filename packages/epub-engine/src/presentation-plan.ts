@@ -19,6 +19,7 @@ export type PresentationOperationKind =
   | 'restore-visible-text'
   | 'restore-explicit-text'
   | 'restore-list-marker'
+  | 'restore-visible-stroke'
   | 'contain-overflow'
   | 'fit-wide-region'
   | 'preserve-media-aspect-ratio'
@@ -142,6 +143,7 @@ const OPERATIONS = new Set<PresentationOperationKind>([
   'restore-visible-text',
   'restore-explicit-text',
   'restore-list-marker',
+  'restore-visible-stroke',
   'contain-overflow',
   'fit-wide-region',
   'preserve-media-aspect-ratio',

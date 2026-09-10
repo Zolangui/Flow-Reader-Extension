@@ -25,6 +25,7 @@
     <item id="clipped-prose" href="clipped-prose.xhtml" media-type="application/xhtml+xml" />
     <item id="occluded-callout" href="occluded-callout.xhtml" media-type="application/xhtml+xml" />
     <item id="lazy-image-section" href="lazy-image-section.xhtml" media-type="application/xhtml+xml" />
+    <item id="stroke-contrast" href="stroke-contrast.xhtml" media-type="application/xhtml+xml" />
     <item id="delayed-tall-image" href="delayed-tall.svg" media-type="image/svg+xml" />
   </manifest>
   <spine>
@@ -41,5 +42,6 @@
     <itemref idref="clipped-prose" />
     <itemref idref="occluded-callout" />
     <itemref idref="lazy-image-section" />
+    <itemref idref="stroke-contrast" />
   </spine>
 </package>

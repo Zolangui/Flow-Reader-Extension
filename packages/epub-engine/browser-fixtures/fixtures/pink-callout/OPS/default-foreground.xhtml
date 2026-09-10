@@ -29,10 +29,6 @@
         color: #000000;
         list-style-type: disc;
       }
-
-      #default-marker-item > p {
-        color: #dce4e8;
-      }
     </style>
   </head>
   <body>
@@ -48,7 +44,8 @@
     </p>
     <ul>
       <li id="default-marker-item">
-        <p>The prose is already readable, while its marker inherits black.</p>
+        This direct list-item text and its marker both inherit black. Their
+        independent paint repairs must compose without invalidating one another.
       </li>
     </ul>
   </body>

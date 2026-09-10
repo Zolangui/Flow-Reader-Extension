@@ -121,6 +121,17 @@ import {
   PresentationRunCancelledError,
   PresentationRunCoordinator,
 } from './presentation-run'
+import {
+  analyzeStrokeContrast,
+  applyRestoreVisibleStrokePlan,
+  isRestoreVisibleStrokeParameters,
+  RESTORE_VISIBLE_STROKE_OPERATION_VALIDATORS,
+  RESTORE_VISIBLE_STROKE_OPERATION_VERSION,
+  restoreStrokeContrastLayer,
+  STROKE_CONTRAST_ANALYZER_VERSION,
+  STROKE_CONTRAST_VALIDATOR_VERSION,
+  validateRestoredVisibleStrokes,
+} from './presentation-stroke'
 import Rendition from './rendition'
 import Resources from './resources'
 import Section from './section'
@@ -221,6 +232,15 @@ export {
   RESTORE_LIST_MARKER_OPERATION_VERSION,
   restoreListMarkerLayer,
   validateRestoredListMarkers,
+  analyzeStrokeContrast,
+  applyRestoreVisibleStrokePlan,
+  isRestoreVisibleStrokeParameters,
+  RESTORE_VISIBLE_STROKE_OPERATION_VALIDATORS,
+  RESTORE_VISIBLE_STROKE_OPERATION_VERSION,
+  restoreStrokeContrastLayer,
+  STROKE_CONTRAST_ANALYZER_VERSION,
+  STROKE_CONTRAST_VALIDATOR_VERSION,
+  validateRestoredVisibleStrokes,
   analyzeWideTableOverflow,
   applyContainOverflowPlan,
   CONTAIN_OVERFLOW_OPERATION_VALIDATORS,
@@ -496,3 +516,10 @@ export type {
   ListMarkerAnalysisOptions,
   RestoreListMarkerParameters,
 } from './presentation-list-marker'
+export type {
+  AppliedStrokeContrastLayer,
+  PresentationStrokeSide,
+  RestoreVisibleStrokeParameters,
+  StrokeContrastAnalysis,
+  StrokeContrastAnalysisOptions,
+} from './presentation-stroke'

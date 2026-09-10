@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title>Semantic stroke contrast fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        color: #dce4e8;
+        font: 17px/1.5 Georgia, serif;
+      }
+
+      body {
+        padding: 32px;
+      }
+
+      .worksheet-line {
+        height: 1.4em;
+        color: #000000;
+        border-bottom-style: solid;
+        border-bottom-width: 1px;
+      }
+
+      table {
+        width: 280px;
+        max-width: 80%;
+        margin-top: 24px;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      .table-wrap {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      td {
+        color: #000000;
+        border: 1px solid currentColor;
+        padding: 10px;
+      }
+
+      td > p {
+        margin: 0;
+        color: #dce4e8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Roteiro de conversa</h1>
+    <p>Escreva três respostas:</p>
+    <div id="worksheet-line" class="worksheet-line"></div>
+    <div class="worksheet-line"></div>
+    <div class="worksheet-line"></div>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr>
+            <td id="stroke-cell"><p>Situação</p></td>
+            <td><p>Comunicação efetiva</p></td>
+          </tr>
+          <tr>
+            <td><p>Exemplo A</p></td>
+            <td><p>Exemplo B</p></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>
